@@ -1,5 +1,8 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
+- `app.py` → hoisted all deferred function-level imports to module top (`store/agent/temporal/events/confidence/investigator/chat/benchmark/media/logging/uuid`); dropped unused `get_lanes` import. No route, schema, or behavior change.
+- `README.md` → expanded to required doc standard (capabilities, stack, setup, env, use, testing, layout). NEW `ARCHITECTURE.md` (modules, data flow, persistence, failure policy, deferred items) + `CONTRIBUTING.md` (conventions, testing bar).
+
 - `chat.py` → session chat router — Spark classifier picks followup | investigate | reanalyze; NEW `_prior_abstention` repeat-unanswerable guard (same-fact re-ask returns cached abstention as followup, no Spark reanalysis; length-guard reopens on new evidence/rephrase); `_followup` abstention path now persists to `qa_runs`.
 - `evidence.py` → `abstain(question, reason, certainty=0.9)` returns status-certainty confidence (certainty no verified evidence exists) + `calibration="abstained"` + `confidence_basis`; factual confidence only for supported/inferred.
 - `orchestrator.py` → NEW `_degraded_suffix` (failed tools from trace) appended to the completed progress detail so a completed session names degraded subsystems.

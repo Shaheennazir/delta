@@ -9,14 +9,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import uuid
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
+import agent
+import benchmark
+import chat as chat_mod
+import confidence
+import events as ev_graph
+import investigator
+import store
+import temporal
+from media import UPLOAD_DIR, save_upload, validate_upload
 from orchestrator import (
-    get_lanes,
     get_progress,
     get_report,
     run_pipeline_async,
@@ -24,6 +34,8 @@ from orchestrator import (
     save_report,
 )
 from schemas import QAOutcome, QARequest, SessionReport, VideoSessionInput
+
+log = logging.getLogger("delta.app")
 
 app = FastAPI(title="delta — Video Intelligence Engine")
 app.add_middleware(
@@ -41,8 +53,6 @@ def health() -> dict:
 
 @app.post("/api/v1/uploads")
 async def upload_clip(file: UploadFile = File(...)) -> dict:
-    from media import save_upload, validate_upload
-
     data = await file.read()
     try:
         meta = validate_upload(data, file.filename or "clip.mp4")
@@ -55,12 +65,6 @@ async def upload_clip(file: UploadFile = File(...)) -> dict:
 
 @app.post("/api/v1/sessions", status_code=202)
 async def create_session(inp: VideoSessionInput, bg: BackgroundTasks) -> dict:
-    import logging
-    import uuid
-
-    import store
-
-    log = logging.getLogger("delta.app")
     session_id = f"ses_{uuid.uuid4().hex[:8]}"
     placeholder = SessionReport(session_id=session_id, status="processing")
     save_report(placeholder)
@@ -92,13 +96,11 @@ def _require_report(session_id: str) -> SessionReport:
 
 @app.get("/api/v1/sessions")
 def list_sessions() -> dict:
-    import store
     return {"sessions": store.list_sessions()}
 
 
 @app.get("/api/v1/uploads/{name}")
 def serve_upload(name: str):
-    from media import UPLOAD_DIR
     base = os.path.abspath(UPLOAD_DIR)
     path = os.path.normpath(os.path.join(base, os.path.basename(name)))
     if not path.startswith(base) or not os.path.exists(path):
@@ -115,7 +117,6 @@ def read_session(session_id: str) -> SessionReport:
 def read_segmentation(session_id: str) -> dict:
     if get_report(session_id) is None:
         raise HTTPException(status_code=404, detail="unknown session_id")
-    import store
     frames = store.get_frames(session_id)
     ents, obs = store.get_entities(session_id)
     lanes: dict[str, list] = {}
@@ -129,7 +130,6 @@ def read_segmentation(session_id: str) -> dict:
 def read_trace(session_id: str) -> dict:
     if get_report(session_id) is None:
         raise HTTPException(status_code=404, detail="unknown session_id")
-    import store
     return {"session_id": session_id, "trace": store.get_trace(session_id)}
 
 
@@ -137,7 +137,6 @@ def read_trace(session_id: str) -> dict:
 def read_tools(session_id: str) -> dict:
     if get_report(session_id) is None:
         raise HTTPException(status_code=404, detail="unknown session_id")
-    import agent
     return {"session_id": session_id, "tools": agent.TOOLS}
 
 
@@ -159,8 +158,7 @@ async def stream_session(session_id: str):
             report = get_report(session_id)
             prog = get_progress(session_id) or {}
             try:
-                import store as _store_mod
-                trace = _store_mod.get_trace(session_id)[-20:]
+                trace = store.get_trace(session_id)[-20:]
             except Exception:
                 trace = []
             yield "data: " + json.dumps({
@@ -188,14 +186,12 @@ async def stream_session(session_id: str):
 @app.get("/api/v1/sessions/{session_id}/events")
 def read_events(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     return {"session_id": session_id, "events": store.get_events(session_id)}
 
 
 @app.get("/api/v1/sessions/{session_id}/entities")
 def read_entities(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     ents, obs = store.get_entities(session_id)
     return {"session_id": session_id, "entities": ents, "observations": obs}
 
@@ -203,37 +199,30 @@ def read_entities(session_id: str) -> dict:
 @app.get("/api/v1/sessions/{session_id}/frames")
 def read_frames(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     return {"session_id": session_id, "frames": store.get_frames(session_id)}
 
 
 @app.get("/api/v1/sessions/{session_id}/ocr")
 def read_ocr(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     return {"session_id": session_id, "ocr": store.get_ocr(session_id)}
 
 
 @app.get("/api/v1/sessions/{session_id}/audio-events")
 def read_audio_events(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     return {"session_id": session_id, "audio_events": store.get_audio_events(session_id)}
 
 
 @app.get("/api/v1/sessions/{session_id}/qa")
 def list_qa(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     return {"session_id": session_id, "qa": store.get_qa(session_id)}
 
 
 @app.get("/api/v1/sessions/{session_id}/state")
 def read_state(session_id: str) -> dict:
     _require_report(session_id)
-    import store
-    import temporal
-    import events as ev_graph
     events = store.get_events(session_id)
     return {"session_id": session_id,
             "states": ev_graph.state_timeline(events),
@@ -243,7 +232,6 @@ def read_state(session_id: str) -> dict:
 @app.get("/api/v1/sessions/{session_id}/alignment")
 def read_alignment(session_id: str) -> dict:
     _require_report(session_id)
-    import store
     sess = store.get_session(session_id) or {}
     return {"session_id": session_id,
             "offset_s": float(sess.get("av_offset_s") or 0.0),
@@ -253,8 +241,6 @@ def read_alignment(session_id: str) -> dict:
 
 @app.get("/api/v1/calibration")
 def read_calibration() -> dict:
-    import confidence
-    import store
     rows = store.get_outcomes()
     pairs = [(float(r["raw_confidence"]), int(r["correct"])) for r in rows]
     return {"points": store.get_calibration(), "n_outcomes": len(pairs),
@@ -266,8 +252,6 @@ def read_calibration() -> dict:
 @app.post("/api/v1/sessions/{session_id}/qa/{qa_id}/outcome")
 def record_qa_outcome(session_id: str, qa_id: str, body: QAOutcome) -> dict:
     _require_report(session_id)
-    import confidence
-    import store
     row = next((q for q in store.get_qa(session_id) if q["qa_id"] == qa_id), None)
     if row is None:
         raise HTTPException(status_code=404, detail="unknown qa_id")
@@ -279,8 +263,6 @@ def record_qa_outcome(session_id: str, qa_id: str, body: QAOutcome) -> dict:
 @app.post("/api/v1/sessions/{session_id}/outcome")
 def record_answer_outcome(session_id: str, body: QAOutcome) -> dict:
     report = _require_report(session_id)
-    import confidence
-    import store
     store.save_outcome(session_id, "answer", float(report.answer_confidence), body.correct)
     return {"session_id": session_id, **confidence.fit_from_outcomes()}
 
@@ -290,7 +272,6 @@ async def chat_message(session_id: str, body: QARequest) -> dict:
     report = _require_report(session_id)
     if report.status != "completed":
         raise HTTPException(status_code=409, detail="session not completed yet")
-    import chat as chat_mod
     return await chat_mod.answer_chat(session_id, body.question)
 
 
@@ -299,8 +280,6 @@ async def ask_question(session_id: str, body: QARequest) -> dict:
     report = _require_report(session_id)
     if report.status != "completed":
         raise HTTPException(status_code=409, detail="session not completed yet")
-    import store
-    import investigator
     sess = store.get_session(session_id) or {}
     rec = await investigator.answer_question(session_id, body.question, sess.get("video_url") or "")
     return rec
@@ -309,7 +288,6 @@ async def ask_question(session_id: str, body: QARequest) -> dict:
 @app.post("/api/v1/sessions/{session_id}/benchmark")
 def run_benchmark(session_id: str) -> dict:
     _require_report(session_id)
-    import benchmark
     return benchmark.run_all(session_id)
 
 

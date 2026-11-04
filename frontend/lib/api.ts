@@ -1,7 +1,8 @@
 import type { BenchmarkTest, Entity, EvidenceSpan, GraphEvent, Observation, QARecord, SessionProgress, SessionReport, VideoSessionPayload } from "./types";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "";
+// shortcut: empty default means same-origin (Vercel single-domain); set NEXT_PUBLIC_API_BASE=http://localhost:8000 in frontend/.env for local dev.
 
 export async function uploadClip(file: File): Promise<{ video_url: string; meta: unknown }> {
   const form = new FormData();
