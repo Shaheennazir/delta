@@ -75,6 +75,33 @@ async def propose_concepts(keyframe_paths: list[str], focus: str = "") -> list[d
             for c in concepts if c.get("prompt")][:4]
 
 
+def _split_implausible_tracklets(obs: list[dict]) -> list[list[dict]]:
+    """Split one SAM object into tracklets at resume-implausible gaps.
+
+    A SAM-native track can jump 6.8-23s or teleport across the frame; keeping
+    it whole contaminates the event graph. A boundary is cut wherever
+    identity.resume_plausible rejects the hop (temporal gap >MAX or drift /
+    size change impossible). Fragments are preserved as observations — never
+    discarded — with separate identities; later re-identification happens only
+    through identity.stitch_tracklets' independent appearance+spatial gate.
+    """
+    if len(obs) <= 1:
+        return [obs]
+    from identity import resume_plausible
+    ordered = sorted(obs, key=lambda o: float(o["t"]))
+    out: list[list[dict]] = [[ordered[0]]]
+    for prev, cur in zip(ordered, ordered[1:]):
+        dt = float(cur["t"]) - float(prev["t"])
+        try:
+            ok = resume_plausible(prev["bbox"], cur["bbox"], dt)
+        except Exception:
+            ok = True
+        if not ok:
+            out.append([])
+        out[-1].append(cur)
+    return [frag for frag in out if frag]
+
+
 def _objects_to_candidates(tracks: dict, fps: float, concept: dict, stream_i: int) -> list[dict]:
     """One candidate per SAM object id — never per concept stream.
 
@@ -92,12 +119,19 @@ def _objects_to_candidates(tracks: dict, fps: float, concept: dict, stream_i: in
         obs = [{"entity_id": "", "t": round(int(fi) / max(1.0, fps), 3),
                 "frame_index": int(fi), "bbox": [float(b[0]), float(b[1]),
                                                  float(b[2]), float(b[3])],
-                "track_conf": round(float(conf), 3)} for fi, b in boxes.items()]
-        out.append({"candidate_id": f"c{stream_i}_{j}_{oid}",
-                    "label": concept.get("label", concept.get("prompt", "")),
-                    "kind": concept.get("kind", "object"),
-                    "confidence": round(min(0.95, 0.4 + 0.3 * coverage), 3),
-                    "observations": obs})
+                "track_conf": round(float(conf), 3),
+                "sam_track_id": str(oid)} for fi, b in boxes.items()]
+        obs.sort(key=lambda o: o["t"])
+        # Split implausible jumps; keep every fragment as observations.
+        frags = _split_implausible_tracklets(obs)
+        for k, frag in enumerate(frags):
+            cid = f"c{stream_i}_{j}_{oid}" if len(frags) == 1 else f"c{stream_i}_{j}_{oid}_p{k}"
+            out.append({"candidate_id": cid,
+                        "sam_track_id": str(oid), "sam_stream": stream_i,
+                        "label": concept.get("label", concept.get("prompt", "")),
+                        "kind": concept.get("kind", "object"),
+                        "confidence": round(min(0.95, 0.4 + 0.3 * coverage), 3),
+                        "observations": frag})
     return out
 
 
@@ -167,12 +201,14 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
     n_merged_away = n_pre_merge - len(merged)
     cands = [c for c in merged if c["observations"]]
     n_empty_dropped = len(merged) - len(cands)
+    n_split_extra = max(0, n_pre_merge - n_objects)
     if not cands:
         _coverage_log(session_id, {"concepts": [c.get("prompt", "") for c in concepts],
                                    "streams_launched": n_streams, "streams_ok": n_ok,
                                    "sam_objects": n_objects, "sam_boxes": n_boxes,
                                    "candidates": n_pre_merge, "merged_away": n_merged_away,
                                    "empty_dropped": n_empty_dropped,
+                                   "split_frags": n_split_extra,
                                    "entities": 0, "observations": 0})
         return entities, all_obs
 
@@ -192,6 +228,7 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
                                "sam_objects": n_objects, "sam_boxes": n_boxes,
                                "candidates": n_pre_merge, "merged_away": n_merged_away,
                                "empty_dropped": n_empty_dropped,
+                               "split_frags": n_split_extra,
                                "entities": len(entities), "observations": len(all_obs)})
     return entities, all_obs
 
@@ -205,11 +242,12 @@ def _coverage_log(session_id: str, diag: dict) -> None:
     0-entity result is diagnosable instead of silent.
     """
     msg = ("coverage concepts=%d streams=%d/%d ok objects=%d boxes=%d "
-           "cands=%d merged_away=%d empty_dropped=%d -> entities=%d obs=%d" % (
+           "cands=%d merged_away=%d empty_dropped=%d split_frags=%d -> entities=%d obs=%d" % (
                len(diag.get("concepts", [])), diag.get("streams_ok", 0),
                diag.get("streams_launched", 0), diag.get("sam_objects", 0),
                diag.get("sam_boxes", 0), diag.get("candidates", 0),
                diag.get("merged_away", 0), diag.get("empty_dropped", 0),
+               diag.get("split_frags", 0),
                diag.get("entities", 0), diag.get("observations", 0)))
     log.info("entity %s", msg)
     if session_id:
