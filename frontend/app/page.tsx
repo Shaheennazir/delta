@@ -18,8 +18,19 @@ type Msg = {
   evidence?: EvidenceSpan[];
   confidence?: number;
   verification?: string;
+  abstained?: boolean;
   route?: string;
 };
+
+const TOOL_LABEL: Record<string, string> = {
+  segment_track_sam: "SAM tracking",
+  transcribe_full_audio: "transcription",
+  ocr_frames: "OCR",
+  detect_audio_events: "audio events",
+  extract_event_graph: "event graph",
+  understand_verify: "video understanding",
+};
+const toolLabel = (t: string) => TOOL_LABEL[t] ?? t;
 
 const STAGES = ["queued", "uploading", "preparing", "observing", "perceiving", "events", "understanding", "verifying", "completed"] as const;
 const ORDER = STAGES.filter((s) => s !== "completed");
@@ -116,7 +127,8 @@ export default function VideoChat() {
         setMsgs((p) => p.filter((m) => m.id !== statusId));
         if (done.status === "completed") {
           push({ id: nid(), role: "assistant", text: done.answer || done.summary || "Analysis complete.",
-            evidence: done.answer_evidence ?? [], confidence: done.answer_confidence, verification: done.answer_verification });
+            evidence: done.answer_evidence ?? [], confidence: done.answer_confidence, verification: done.answer_verification,
+            abstained: done.answer_verification === "unknown" });
           fetchEvents(sid).then(setEvents).catch(() => {});
           fetchEntities(sid).then((r) => setEntities(r.entities)).catch(() => {});
         } else {
@@ -172,12 +184,13 @@ export default function VideoChat() {
       if (s.focus) thread.push({ id: nid(), role: "user", text: s.focus });
       if (done.status === "completed") {
         thread.push({ id: nid(), role: "assistant", text: done.answer || done.summary || "Analysis complete.",
-          evidence: done.answer_evidence ?? [], confidence: done.answer_confidence, verification: done.answer_verification });
+          evidence: done.answer_evidence ?? [], confidence: done.answer_confidence, verification: done.answer_verification,
+          abstained: done.answer_verification === "unknown" });
       }
       for (const q of qa) {
         thread.push({ id: nid(), role: "user", text: q.question });
         thread.push({ id: nid(), role: "assistant", text: q.answer, evidence: q.evidence ?? [],
-          confidence: q.confidence, verification: q.verification });
+          confidence: q.confidence, verification: q.verification, abstained: q.abstained ?? (q.verification === "unknown" && !(q.evidence ?? []).length) });
       }
       setMsgs(thread);
       fetchEvents(s.session_id).then(setEvents).catch(() => {});
@@ -287,7 +300,8 @@ export default function VideoChat() {
       const r = await sendChat(sessionId, text);
       setMsgs((p) => p.map((m) => m.id === pendingId
         ? { id: pendingId, role: "assistant", text: r.answer || "I could not verify an answer from this video.",
-            evidence: r.evidence ?? [], confidence: r.confidence, verification: r.verification, route: r.route }
+            evidence: r.evidence ?? [], confidence: r.confidence, verification: r.verification, route: r.route,
+            abstained: r.abstained ?? (r.verification === "unknown") }
         : m));
     } catch (e) {
       setMsgs((p) => p.map((m) => m.id === pendingId
@@ -299,6 +313,7 @@ export default function VideoChat() {
     }
   }, [input, sessionId, busy, answering, push]);
 
+  const failedTools = [...new Set(trace.filter((t) => t.event === "failed").map((t) => t.tool))];
   const analyzing = busy;
   const moments: VideoMoment[] = report?.moments ?? [];
   const stageIdx = ORDER.indexOf((progress?.stage ?? "queued") as (typeof ORDER)[number]);
@@ -351,7 +366,7 @@ export default function VideoChat() {
               ) : (
                 <>
                   <span className="h-1.5 w-1.5 rounded-full bg-[#3ddc97]" />
-                  <span className="truncate">evidence locked · {moments.length} moments · {events.length} events · ask anything</span>
+                  <span className="truncate">evidence locked · {moments.length} moments · {events.length} events · ask anything{failedTools.length > 0 ? ` · ⚠ ${failedTools.map(toolLabel).join(", ")} degraded` : ""}</span>
                 </>
               )
             ) : (
@@ -572,6 +587,12 @@ export default function VideoChat() {
               )}
 
               <section className="space-y-3" aria-live="polite">
+                {!analyzing && failedTools.length > 0 && (
+                  <div className="fade-in rounded-2xl border border-[#ffb224]/30 bg-[#ffb224]/10 p-3.5 text-[13px] leading-relaxed text-[#ffd88a]">
+                    ⚠ Perception degraded ({failedTools.map(toolLabel).join(", ")} failed) — analysis continued with the remaining evidence.
+                    Completed means the pipeline finished, not that every subsystem succeeded.
+                  </div>
+                )}
                 {msgs.map((m, idx) => m.role === "user" ? (
                   <div key={m.id} className="msg-in flex justify-end" style={{ animationDelay: `${Math.min(idx * 30, 150)}ms` }}>
                     <div className="max-w-[85%] rounded-3xl rounded-br-lg bg-[#f4f1ea] px-4 py-3 text-sm leading-relaxed text-[#141310] shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
@@ -618,15 +639,22 @@ export default function VideoChat() {
                   <div key={m.id} className="msg-in flex gap-2.5" style={{ animationDelay: `${Math.min(idx * 30, 150)}ms` }}>
                     <div className="font-display mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#ff3d2e]/15 text-sm text-[#ff8d82]">✦</div>
                     <div className="min-w-0 max-w-[92%] flex-1 rounded-3xl rounded-bl-lg border border-white/[0.08] bg-[#101116] px-4 py-3.5 shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+                      {(m.abstained || m.verification === "unknown") && (
+                        <div className="mb-2.5 rounded-xl bg-amber-950/60 p-2.5 text-xs text-amber-200">
+                          Abstained — insufficient verified evidence.
+                        </div>
+                      )}
                       <p className="whitespace-pre-wrap text-[14px] leading-[1.7] text-[#ece9e2]">{m.text}</p>
                       {(m.route || m.verification != null || m.confidence != null) && (
                         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                           {m.verification && (
-                            <span className={`font-mono2 rounded-full border px-2 py-0.5 text-[10.5px] ${m.verification === "supported" ? "border-[#3ddc97]/25 bg-[#3ddc97]/10 text-[#3ddc97]" : "border-[#ffb224]/25 bg-[#ffb224]/10 text-[#ffb224]"}`}>
+                            <span title={m.verification === "unknown" ? "insufficient evidence for the claim" : "evidence status for the claim"} className={`font-mono2 rounded-full border px-2 py-0.5 text-[10.5px] ${m.verification === "supported" ? "border-[#3ddc97]/25 bg-[#3ddc97]/10 text-[#3ddc97]" : "border-[#ffb224]/25 bg-[#ffb224]/10 text-[#ffb224]"}`}>
                               {m.verification}
                             </span>
                           )}
-                          <ConfBadge v={m.confidence} />
+                          <span title={(m.abstained || m.verification === "unknown") ? "certainty that no verified evidence exists (not factual probability)" : "calibrated factual confidence"}>
+                            <ConfBadge v={m.confidence} />
+                          </span>
                           {m.route && <span className="font-mono2 text-[10.5px] text-[#4a4844]">{m.route}</span>}
                         </div>
                       )}

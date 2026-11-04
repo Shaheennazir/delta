@@ -27,6 +27,20 @@ _progress: dict[str, dict] = {}
 _lanes: dict[str, dict] = {}
 
 
+def _degraded_suffix(session_id: str) -> str:
+    """Completed ≠ all subsystems succeeded: name failed perception tools."""
+    try:
+        import store as _store_mod
+        failed = sorted({t.get("tool", "") for t in _store_mod.get_trace(session_id)
+                         if t.get("event") == "failed" and t.get("tool")})
+    except Exception:
+        failed = []
+    if not failed:
+        return ""
+    return (" · degraded: " + ", ".join(failed) +
+            " failed — continued with remaining evidence")
+
+
 def save_progress(session_id: str, stage: str, detail: str = "", error: str | None = None) -> None:
     import store as _store_mod
     _store_mod.save_progress(session_id, stage, detail, error)
@@ -274,7 +288,8 @@ async def run_pipeline_async(inp: VideoSessionInput, progress_cb=None,
             av_sync_confidence=float(av.get("confidence", 0.0)))
         save_progress(session_id, "completed",
                       f"Done — {len(verified_moments)} moments, {len(graph_events)} events, "
-                      f"{len(perc['entities'])} entities, {len(frame_rows)} frames.")
+                      f"{len(perc['entities'])} entities, {len(frame_rows)} frames."
+                      + (_degraded_suffix(session_id) or ""))
         return report
     except Exception as e:
         log.exception("pipeline failed for %s", session_id)

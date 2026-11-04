@@ -291,7 +291,8 @@ async def run_fusion_understanding(session_id: str, file_id: str, focus: str,
         abs_rec = evmod.abstain(focus, gate["reason"])
         intel["answer"] = abs_rec["answer"]
         claims, claim_spans = [], []
-        detail = {"calibrated": 0.0, "raw": 0.0, "method": "abstained"}
+        detail = {"calibrated": abs_rec["confidence"], "raw": abs_rec["raw_confidence"],
+                  "method": "abstained"}
         answer_verification = "unknown"
     intel["answer_claims"] = claims
     trace(session_id, "understand_verify", "received",

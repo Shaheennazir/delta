@@ -237,7 +237,8 @@ async def answer_question(session_id: str, question: str, video_url: str = "") -
         qa_id = f"qa_{uuid.uuid4().hex[:8]}"
         rec = evmod.abstain(question, "no retrievable evidence")
         rec["trace"] = {"plan": plan, "retrieved": []}
-        store.save_qa(session_id, qa_id, question, rec["answer"], [], 0.0, "unknown", 0.0)
+        store.save_qa(session_id, qa_id, question, rec["answer"], [],
+                      rec["confidence"], "unknown", rec["raw_confidence"])
         return {"qa_id": qa_id, "question": question, **rec}
 
     s, e = plan["interval"]
@@ -277,8 +278,8 @@ async def answer_question(session_id: str, question: str, video_url: str = "") -
     if gate["abstain"]:
         rec = evmod.abstain(question, gate["reason"])
         rec["trace"] = trace
-        store.save_qa(session_id, qa_id, question, rec["answer"], [], 0.0,
-                      "unknown", 0.0)
+        store.save_qa(session_id, qa_id, question, rec["answer"], [],
+                      rec["confidence"], "unknown", rec["raw_confidence"])
     else:
         rec = {"answer": insp["answer"], "evidence": spans,
                "confidence": detail["calibrated"], "raw_confidence": detail["raw"],

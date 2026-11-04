@@ -1,5 +1,11 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
+- `chat.py` → session chat router — Spark classifier picks followup | investigate | reanalyze; NEW `_prior_abstention` repeat-unanswerable guard (same-fact re-ask returns cached abstention as followup, no Spark reanalysis; length-guard reopens on new evidence/rephrase); `_followup` abstention path now persists to `qa_runs`.
+- `evidence.py` → `abstain(question, reason, certainty=0.9)` returns status-certainty confidence (certainty no verified evidence exists) + `calibration="abstained"` + `confidence_basis`; factual confidence only for supported/inferred.
+- `orchestrator.py` → NEW `_degraded_suffix` (failed tools from trace) appended to the completed progress detail so a completed session names degraded subsystems.
+- `frontend/app/page.tsx` → Msg carries `abstained`; assistant bubbles show abstained banner + status-certainty tooltip; header shows `⚠ <tools> degraded`; completed sessions with trace failures show a degradation banner (finished ≠ all subsystems succeeded); intel signal box lists degraded tools.
+- `frontend/components/EnginePanels.tsx` → `QaPanel` abstained banner shows status-certainty % + calibration.
+
 - `chat.py` → NEW: session chat router — Spark classifier picks followup (answer from stored analysis only) | investigate (`investigator.answer_question`, retrieval-gated) | reanalyze (fresh `intel.analyze_video` on the same upload + frame-verified spans); every route persists to `qa_runs` and logs `chat_router`/`reanalyze` to the trace store; classifier failure defaults to investigate.
 - `frontend/app/page.tsx` → VideoChat (replaces VideoWorkspace): landing hero (upload + question + presets) → live status bubble (stage pills + elapsed) → answer bubble with seekable evidence chips → follow-up composer; header `engine` toggle reveals TracePanel + event graph + entities + transcript; `QaPanel`/`BenchmarkPanel` no longer rendered (APIs unchanged).
 - `frontend/components/EnginePanels.tsx` → `EventList` (event cards with source badge + stored evidence frame ids + seek; empty-frame state reads "no retrievable frames"), `QaPanel` (investigator input + abstained banner + verification/confidence/calibration + clickable evidence spans), `BenchmarkPanel` (runs 11 adversarial tests), `TracePanel`, `EntityList`.
@@ -39,6 +45,19 @@
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Demo fixes: repeat-unanswerable routing, status-certainty abstention, degradation surfacing
+
+**What changed:**
+- `chat.py`: `_prior_abstention` guard — a repeat of a previously abstained question returns the cached abstention as `followup` (`cached_repeat`, no Spark calls); substantially reworded/longer asks reopen normal routing. `_followup` abstention path now persists.
+- `evidence.py` (+`investigator.py`/`agent.py`/`chat.py`/`benchmark.py`/`test_engine2.py`): abstention confidence is now certainty in the `unknown` status (default 0.9, `calibration="abstained"`, `confidence_basis`), propagated instead of hardcoded 0.0; benchmark/test assert status-certainty.
+- `orchestrator.py` + `frontend/app/page.tsx` + `EnginePanels.tsx`: failed perception tools (e.g. SAM) named in completed progress detail and shown in UI (header `⚠ degraded` chip + completion banner + abstention banners with status-certainty labels). Completed = pipeline finished, not all subsystems succeeded.
+
+**Why:**
+- Review: repeated punch-count asks must not trigger expensive reanalysis; abstention % must not read as factual probability; SAM failure must be visible.
+
+**Impact:**
+- 16 offline + 5 API tests pass; `npm run build` clean. No schema migration (degradation read from trace; abstention inferred from `verification=unknown` + empty evidence on reload).
 
 ### [2026-11-05] — Chat-first UI + intent-routed follow-ups (chat box, live session, engine toggle)
 

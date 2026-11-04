@@ -133,13 +133,13 @@ export function QaPanel({ sessionId, onSeek }: { sessionId: string; onSeek: (t: 
         <div className="rise mt-3 space-y-2">
           {rec.abstained && (
             <div className="rounded-xl bg-amber-950/60 p-2.5 text-xs text-amber-200">
-              Abstained — insufficient verified evidence.
+              Abstained — insufficient verified evidence ({Math.round(rec.confidence * 100)}% certainty there is none; not factual probability).
             </div>
           )}
           <p className="text-[13.5px] leading-relaxed text-[#f4f1ea]">{rec.answer}</p>
-          <div className="font-mono2 text-[11px] text-[#63615c]">
+          <div className="font-mono2 text-[11px] text-[#63615c]" title={rec.abstained ? "certainty that no verified evidence exists" : "calibrated factual confidence"}>
             verification: <span className={rec.verification === "supported" ? "text-emerald-300" : "text-amber-300"}>{rec.verification}</span>
-            {" · "}{(rec.confidence * 100).toFixed(0)}%
+            {" · "}{(rec.confidence * 100).toFixed(0)}%{rec.calibration ? ` · ${rec.calibration}` : ""}
           </div>
           {rec.evidence.map((s, i) => (
             <button key={i} onClick={() => onSeek(s.start)} className="font-mono2 block text-[11.5px] text-sky-300 hover:underline">

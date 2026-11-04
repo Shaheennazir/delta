@@ -58,7 +58,8 @@ def test_evidence_gate_and_abstain():
     assert evidence.calibrate(0.9, 0, 0) == 0.0
     assert 0.0 < evidence.calibrate(0.9, 1, 2) <= 1.0
     rec = evidence.abstain("Was there a helicopter?")
-    assert rec["confidence"] == 0.0 and rec["verification"] == "unknown"
+    assert rec["abstained"] and rec["verification"] == "unknown"
+    assert rec["confidence"] >= 0.5  # status-certainty, not factual probability
 
 
 def test_observer_adaptive_plan():

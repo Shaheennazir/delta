@@ -85,8 +85,15 @@ def decision(verification: str, calibrated: float, has_answer: bool,
     return {"abstain": False, "reason": "ok", "threshold": round(thr, 6)}
 
 
-def abstain(question: str, reason: str = "") -> dict:
+def abstain(question: str, reason: str = "", certainty: float = 0.9) -> dict:
+    """Refuse the claim. Confidence is certainty in the *unknown* status
+    (how sure the system is that no verified evidence exists), not a
+    factual probability. shortcut: fixed 0.9 status-certainty; upgrade
+    when the selective-risk model covers abstention directly."""
+    c = max(0.0, min(1.0, float(certainty)))
     return {"answer": f"Insufficient video evidence to answer: {question[:200]}",
-            "evidence": [], "confidence": 0.0, "raw_confidence": 0.0,
+            "evidence": [], "confidence": c, "raw_confidence": c,
             "verification": "unknown", "abstained": True,
+            "calibration": "abstained",
+            "confidence_basis": "status-certainty: certainty that no verified evidence exists",
             "abstain_reason": reason or "no verified evidence"}

@@ -88,7 +88,10 @@ async def _followup(session_id: str, message: str, analysis: str,
         from evidence import abstain
         rec = abstain(message, "stored analysis does not cover this")
         rec["route"] = "followup"
-        return {"qa_id": f"qa_{uuid.uuid4().hex[:8]}", "question": message, **rec}
+        qa_id = f"qa_{uuid.uuid4().hex[:8]}"
+        store.save_qa(session_id, qa_id, message, rec["answer"], [],
+                      rec["confidence"], "unknown", rec["raw_confidence"])
+        return {"qa_id": qa_id, "question": message, **rec}
     qa_id = f"qa_{uuid.uuid4().hex[:8]}"
     store.save_qa(session_id, qa_id, message, answer, [], conf, "inferred", conf)
     return {"qa_id": qa_id, "question": message, "answer": answer, "evidence": [],
@@ -147,7 +150,8 @@ async def _reanalyze(session_id: str, message: str) -> dict:
     if gate["abstain"]:
         rec = evmod.abstain(message, gate["reason"])
         rec["route"] = "reanalyze"
-        store.save_qa(session_id, qa_id, message, rec["answer"], [], 0.0, "unknown", 0.0)
+        store.save_qa(session_id, qa_id, message, rec["answer"], [],
+                      rec["confidence"], "unknown", rec["raw_confidence"])
         return {"qa_id": qa_id, "question": message, **rec}
     store.save_qa(session_id, qa_id, message, intel["answer"], spans,
                   detail["calibrated"], verification, detail["raw"])
@@ -157,6 +161,47 @@ async def _reanalyze(session_id: str, message: str) -> dict:
             "abstained": False, "calibration": detail["method"],
             "summary": intel.get("summary", ""), "route": "reanalyze",
             "verify_reason": reason}
+
+
+def _tokens(s: str) -> set[str]:
+    import re
+    return set(re.findall(r"[a-z0-9]+", s.lower()))
+
+
+def _prior_abstention(message: str, history: list[dict]) -> dict | None:
+    """Most recent prior QA that abstained on the same fact.
+
+    Same fact = normalized exact match, or high token overlap at similar
+    length. A substantially longer/shorter rephrase is treated as new
+    evidence or a changed question and is NOT cached.
+    """
+    want = _tokens(message)
+    if not want:
+        return None
+    for h in reversed(history):
+        q = str(h.get("question", ""))
+        if not q:
+            continue
+        ver = str(h.get("verification", ""))
+        ans = str(h.get("answer", ""))
+        abstained = ver == "unknown" or ans.startswith("Insufficient video evidence")
+        if not abstained:
+            continue
+        if q.strip().lower() == message.strip().lower():
+            return h
+        got = _tokens(q)
+        if not got:
+            continue
+        inter = len(want & got)
+        union = len(want | got)
+        jacc = inter / union if union else 0.0
+        contain = inter / min(len(want), len(got))
+        # New detail changes the length a lot -> rephrase/new evidence, don't cache.
+        if max(len(want), len(got)) > 1.5 * min(len(want), len(got)):
+            continue
+        if jacc >= 0.5 or contain >= 0.8:
+            return h
+    return None
 
 
 async def answer_chat(session_id: str, message: str) -> dict:
@@ -170,6 +215,28 @@ async def answer_chat(session_id: str, message: str) -> dict:
     analysis = investigator._analysis_context(sess)
 
     agent.trace(session_id, "chat_router", "sent", message[:160])
+    prior = _prior_abstention(message, history)
+    if prior is not None:
+        detail = ("repeat of previously unanswerable question "
+                  f"(qa {prior.get('qa_id', '?')}) — no reanalysis; "
+                  "provide new evidence or rephrase to reopen")
+        agent.trace(session_id, "chat_router", "received", detail[:300])
+        qa_id = f"qa_{uuid.uuid4().hex[:8]}"
+        store.save_qa(session_id, qa_id, message, str(prior.get("answer", "")),
+                      list(prior.get("evidence") or []),
+                      float(prior.get("confidence") or 0.0),
+                      str(prior.get("verification") or "unknown"),
+                      float(prior.get("raw_confidence") or prior.get("confidence") or 0.0))
+        return {"qa_id": qa_id, "question": message,
+                "answer": str(prior.get("answer", "")),
+                "evidence": list(prior.get("evidence") or []),
+                "confidence": float(prior.get("confidence") or 0.0),
+                "raw_confidence": float(prior.get("raw_confidence") or prior.get("confidence") or 0.0),
+                "verification": str(prior.get("verification") or "unknown"),
+                "abstained": True, "calibration": "abstained",
+                "confidence_basis": "status-certainty: certainty that no verified evidence exists",
+                "route": "followup", "route_reason": detail,
+                "cached_repeat": True}
     agent.trace(session_id, "chat_router", "waiting", "Spark routing intent…")
     try:
         route = await asyncio.wait_for(

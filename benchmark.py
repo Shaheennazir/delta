@@ -284,10 +284,12 @@ def run_all(session_id: str) -> dict:
     tests.append(_t("counterfactual", not ok, f"empty evidence rejected: {reason}"))
 
     # 10. Unsupported/unknown answers must abstain, regardless of model confidence.
+    # Abstention confidence is certainty in the unknown status, not factual probability.
     abs_rec = evmod.abstain("Was there a helicopter?")
     gate = evmod.decision("unknown", 0.99, True)
     tests.append(_t("impossible_question",
-                    abs_rec["abstained"] and abs_rec["confidence"] == 0.0
+                    abs_rec["abstained"] and abs_rec["verification"] == "unknown"
+                    and abs_rec["confidence"] >= 0.5
                     and not abs_rec["evidence"] and gate["abstain"],
                     "abstains on unknown grounding even with 0.99 model confidence"))
 
