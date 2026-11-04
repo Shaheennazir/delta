@@ -164,7 +164,9 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
                         session_id: str = "") -> tuple[list[dict], list[dict]]:
     """One SAM stream per concept; one persistent identity per SAM object.
 
-    Streams run concurrently, each budgeted. Duplicate tracks are merged only
+    Streams run concurrently, each budgeted. Failed streams are retried once
+    (transient transport aborts were the observed zero-entity cause); permanent
+    errors (missing key, bad handle) fail fast. Duplicate tracks are merged only
     when their boxes actually overlap on shared frames. Appearance descriptors
     then bind each instance to a cross-session global_id via identity.py.
     """
@@ -175,16 +177,42 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
     if not concepts:
         return entities, all_obs
     concepts = concepts[:3]
+    n_retried = 0
+    n_retry_ok = 0
+    stream_errors: list[str] = []
 
     async def one(i: int, c: dict):
+        nonlocal n_retried, n_retry_ok
         try:
-            result = await asyncio.wait_for(
-                stream_segmentation(file_id, c["prompt"]), timeout_per_concept)
-            tracks = tracks_from_result(result, n_frames, media=media_wh)
-            return i, c, tracks, None
-        except (asyncio.TimeoutError, Exception) as e:  # honest empty, never fake boxes
-            log.warning("SAM stream failed for %r: %s", c.get("prompt"), e)
-            return i, c, None, str(e)[:200]
+            from sam_client import NoApiKey as _NoKey
+        except Exception:  # pragma: no cover - import always succeeds
+            _NoKey = ()
+        for attempt in (1, 2):
+            try:
+                result = await asyncio.wait_for(
+                    stream_segmentation(file_id, c["prompt"]), timeout_per_concept)
+                tracks = tracks_from_result(result, n_frames, media=media_wh)
+                if attempt == 2:
+                    n_retry_ok += 1
+                    log.info("SAM retry succeeded for %r", c.get("prompt"))
+                return i, c, tracks, None
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # honest empty, never fake boxes
+                if isinstance(e, _NoKey) or isinstance(e, ValueError):
+                    log.warning("SAM stream failed fast for %r: %s", c.get("prompt"), e)
+                    return i, c, None, str(e)[:200]
+                log.warning("SAM stream failed for %r (attempt %d/2): %s",
+                            c.get("prompt"), attempt, e)
+                if attempt == 1:
+                    n_retried += 1
+                    try:
+                        await asyncio.sleep(2.0)
+                    except asyncio.CancelledError:
+                        raise
+                    continue
+                return i, c, None, str(e)[:200]
+        return i, c, None, "unreachable"  # pragma: no cover
 
     results = await asyncio.gather(*(one(i, c) for i, c in enumerate(concepts)))
     n_streams = len(concepts)
@@ -192,6 +220,12 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
     n_objects = sum(len((t or {}).get("objects") or {}) for _, _, t, _e in results)
     n_boxes = sum(len((o or {}).get("boxes") or {})
                   for _, _, t, _e in results for o in ((t or {}).get("objects") or {}).values())
+    for _, c, tracks, err in results:
+        if not (tracks and tracks.get("objects")) and err:
+            stream_errors.append(f"{str(c.get('prompt', ''))[:40]}: {err}"[:120])
+    if stream_errors:
+        log.warning("SAM streams failed: %d/%d (%s)",
+                    n_streams - n_ok, n_streams, "; ".join(stream_errors)[:300])
     cands: list[dict] = []
     for i, c, tracks, _err in results:
         if tracks and tracks.get("objects"):
@@ -209,6 +243,8 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
                                    "candidates": n_pre_merge, "merged_away": n_merged_away,
                                    "empty_dropped": n_empty_dropped,
                                    "split_frags": n_split_extra,
+                                   "streams_retried": n_retried, "retry_ok": n_retry_ok,
+                                   "stream_errors": list(stream_errors),
                                    "entities": 0, "observations": 0})
         return entities, all_obs
 
@@ -229,6 +265,8 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
                                "candidates": n_pre_merge, "merged_away": n_merged_away,
                                "empty_dropped": n_empty_dropped,
                                "split_frags": n_split_extra,
+                               "streams_retried": n_retried, "retry_ok": n_retry_ok,
+                               "stream_errors": list(stream_errors),
                                "entities": len(entities), "observations": len(all_obs)})
     return entities, all_obs
 
@@ -242,18 +280,24 @@ def _coverage_log(session_id: str, diag: dict) -> None:
     0-entity result is diagnosable instead of silent.
     """
     msg = ("coverage concepts=%d streams=%d/%d ok objects=%d boxes=%d "
-           "cands=%d merged_away=%d empty_dropped=%d split_frags=%d -> entities=%d obs=%d" % (
+           "cands=%d merged_away=%d empty_dropped=%d split_frags=%d "
+           "retried=%d retry_ok=%d -> entities=%d obs=%d" % (
                len(diag.get("concepts", [])), diag.get("streams_ok", 0),
                diag.get("streams_launched", 0), diag.get("sam_objects", 0),
                diag.get("sam_boxes", 0), diag.get("candidates", 0),
                diag.get("merged_away", 0), diag.get("empty_dropped", 0),
-               diag.get("split_frags", 0),
+               diag.get("split_frags", 0), diag.get("streams_retried", 0),
+               diag.get("retry_ok", 0),
                diag.get("entities", 0), diag.get("observations", 0)))
     log.info("entity %s", msg)
     if session_id:
         try:
             import store
-            store.append_trace(session_id, "segment_track_sam", "received", msg[:300])
+            detail = msg[:240]
+            errs = diag.get("stream_errors") or []
+            if errs:
+                detail = (detail + " | err: " + errs[0])[:300]
+            store.append_trace(session_id, "segment_track_sam", "received", detail)
         except Exception:
             pass
 

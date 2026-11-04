@@ -16,7 +16,7 @@
 - `store.py` → sqlite persistence (`data/delta.db`): sessions (incl. direct `answer`)/progress/frames/entities/observations/events/ocr/audio_events/qa_runs/trace; old DBs backfill the `answer` column on init.
 - `observer.py` → adaptive sampling (motion + scene cuts, 0.5/3/15 FPS tiers) + JPEG frame store `frames/<session>/`; two ffmpeg passes total (raw probe pipe + one balanced-select materialise), never one process per frame.
 - `ocr.py` → independent still-image OCR passes (concurrent gather, 90s per-image budget) + bounded-window voting (similarity ≥0.8 AND span ≤OCR_GROUP_WINDOW_S=2.0s); output keeps best row's own t+frame_index so every citation points at its detection frame.
-- `entities.py` → instance-level registry: one candidate per SAM object id (never per concept stream) split by `_split_implausible_tracklets` at resume-implausible gaps (via `identity.resume_plausible`; preserves `sam_track_id`/`sam_stream` provenance, keeps all fragments, separate identities re-identified only via `stitch_tracklets`), IoU merge at 0.65, then `identity.assign` binds each instance to cross-session `global_id` via appearance gallery. PLUS honest coverage diagnostics: `_coverage_log` records concepts/streams-ok/objects/boxes/candidates/merged-away/empty-dropped/split_frags/entities/obs to log + trace (thresholds NOT lowered).
+- `entities.py` → instance-level registry: one candidate per SAM object id (never per concept stream) split by `_split_implausible_tracklets` at resume-implausible gaps (via `identity.resume_plausible`; preserves `sam_track_id`/`sam_stream` provenance, keeps all fragments, separate identities re-identified only via `stitch_tracklets`), IoU merge at 0.65, then `identity.assign` binds each instance to cross-session `global_id` via appearance gallery. `track_session` runs one SAM stream per concept concurrently with one safe retry (transient failures retried once after 2s; `NoApiKey`/`ValueError` fail fast; `CancelledError` propagates) and honest-empty on final failure. PLUS honest coverage diagnostics: `_coverage_log` records concepts/streams-ok/objects/boxes/candidates/merged-away/empty-dropped/split_frags/retried/retry_ok/stream_errors/entities/obs to log + trace (thresholds NOT lowered).
 - `audio_events.py` → deterministic non-speech detection + `rms_envelope` (50 ms hop) and `shift_events` (audio-clock → video-clock) used by av_align.
 - `temporal.py` → Allen interval algebra (timestamps normalised to ms via `_norm_ts` before every relation) + deterministic ordering `order_events` as pure function of (norm start, norm end, event_id/candidate_id) — permutation-invariant, never input position; `contradictions(events, duration)` flags out-of-range spans and mutually-exclusive same-entity state values over overlapping time.
 - `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark only labels by candidate_id; `state_timeline` merges contiguous same-value intervals.
@@ -34,6 +34,17 @@
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Safe retry for failed SAM streams (entities)
+
+**What changed:**
+- `entities.py`: `track_session.one` retries each concept stream once after a 2s pause; `NoApiKey`/`ValueError` fail fast without retry, `CancelledError` propagates; counts `streams_retried`/`retry_ok` and collects per-stream `stream_errors`; `_coverage_log` message + trace now carry `retried/retry_ok` and the first stream error.
+
+**Why:**
+- v0.2 zero-entity clips (18b160d3a7, d33c8343bc, c4638cc87e, 0d0ebe00cc, 1088228079) all showed concepts proposed but 0/1–3 SAM streams ok — transport aborts, not concept/threshold failures. A single transient abort wiped the whole registry.
+
+**Impact:**
+- One transient abort no longer permanently loses a concept; permanent errors still fail fast to honest-empty (never invented boxes). Worst-case wall clock grows by one extra per-concept budget +2s, streams stay concurrent. 16 offline tests pass; mocked retry-then-ok / permanent-no-retry / persistent-fail self-checks pass.
 
 ### [2026-11-05] — Map interaction evidence to stored frames (events)
 
