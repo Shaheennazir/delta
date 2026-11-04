@@ -2,7 +2,7 @@
 
 - `schemas.py` → Pydantic v2 contracts: VideoSessionInput, SessionReport (answer + answer_evidence/answer_confidence/answer_verification/answer_calibration + av_offset_s/av_sync_confidence), EvidenceSpan (source_id/kind/verification), AnswerClaim, GraphEvent (candidate_id/source), QAOutcome/QAResponse(abstained).
 - `identity.py` → instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update. CONSTRAINED stitching: `resume_plausible` (drift ≤2+dt diags, size 0.33–3) + `stitch_tracklets` with explicit rejections (temporal overlap/shared frame, impossible displacement, appearance <thr, simultaneous-track conflict, scene-cut without IoU>0.1+appearance ≥0.90, gap>5s or gap>2.5s without appearance ≥0.85); stage-1 same-gid merges ONLY when `_can_merge` passes else forks unknown id; `assign` resolves simultaneous same-gid conflicts (strongest keeps id) and forwards scene-cut times from frame_rows.
-- `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark labels by candidate_id only; `state_timeline` merges contiguous same-value intervals. PLUS `build_interactions` (grounded: same-frame co-presence, contact requires IoU>0.02 — proximity alone is near with dist<1.2; runs linked ≤1s, ≥2 co-present frames required for before-and-after evidence) emitting `interaction`-source candidates with entity_ids=[a,b]; wired into `build_candidates` + preserved through `extract_events`.
+- `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark labels by candidate_id only; `state_timeline` merges contiguous same-value intervals. PLUS `build_interactions(entities, observations, frame_rows=None)` (grounded: same-frame co-presence, contact requires IoU>0.02 — proximity alone is near with dist<1.2; runs linked ≤1s, ≥2 co-present frames required) with explicit SAM->stored mapping `_map_sam_to_stored` (exact index match only, no nearest-neighbour fallback; runs with <2 mapped frames rejected); emits `interaction`-source candidates with entity_ids=[a,b], `evidence_frames`=stored ids + `sam_evidence_frames`=raw SAM fis; wired into `build_candidates(..., frame_rows)` + preserved through `extract_events`.
 - `confidence.py` → NEW: isotonic (PAVA) calibration from labelled outcomes, Brier/ECE, selective-prediction threshold at max 10% risk; `apply_saved` returns (score, "isotonic"|"uncalibrated"); no calibrated claim without outcomes.
 - `av_align.py` → NEW: audio-RMS vs visual-motion cross-correlation on 50 ms grid, ±2 s lag search; `estimate_offset` + `events_offset`; flat/insufficient signals report confidence 0 with method flag, never fake sync.
 - `retrieval.py` → NEW: uniform evidence index (events/entities/speech/OCR/audio) with IDF lexical score + time-hint overlap fraction; stored confidence is tiebreak only; spans + frame ids come from the index, never the model.
@@ -16,7 +16,7 @@
 - `store.py` → sqlite persistence (`data/delta.db`): sessions (incl. direct `answer`)/progress/frames/entities/observations/events/ocr/audio_events/qa_runs/trace; old DBs backfill the `answer` column on init.
 - `observer.py` → adaptive sampling (motion + scene cuts, 0.5/3/15 FPS tiers) + JPEG frame store `frames/<session>/`; two ffmpeg passes total (raw probe pipe + one balanced-select materialise), never one process per frame.
 - `ocr.py` → independent still-image OCR passes (concurrent gather, 90s per-image budget) + bounded-window voting (similarity ≥0.8 AND span ≤OCR_GROUP_WINDOW_S=2.0s); output keeps best row's own t+frame_index so every citation points at its detection frame.
-- `entities.py` → instance-level registry: one candidate per SAM object id (never per concept stream), IoU merge at 0.65, then `identity.assign` binds each instance to cross-session `global_id` via appearance gallery. PLUS honest coverage diagnostics: `_coverage_log` records concepts/streams-ok/objects/boxes/candidates/merged-away/empty-dropped/entities/obs to log + trace (thresholds NOT lowered).
+- `entities.py` → instance-level registry: one candidate per SAM object id (never per concept stream) split by `_split_implausible_tracklets` at resume-implausible gaps (via `identity.resume_plausible`; preserves `sam_track_id`/`sam_stream` provenance, keeps all fragments, separate identities re-identified only via `stitch_tracklets`), IoU merge at 0.65, then `identity.assign` binds each instance to cross-session `global_id` via appearance gallery. PLUS honest coverage diagnostics: `_coverage_log` records concepts/streams-ok/objects/boxes/candidates/merged-away/empty-dropped/split_frags/entities/obs to log + trace (thresholds NOT lowered).
 - `audio_events.py` → deterministic non-speech detection + `rms_envelope` (50 ms hop) and `shift_events` (audio-clock → video-clock) used by av_align.
 - `temporal.py` → Allen interval algebra (timestamps normalised to ms via `_norm_ts` before every relation) + deterministic ordering `order_events` as pure function of (norm start, norm end, event_id/candidate_id) — permutation-invariant, never input position; `contradictions(events, duration)` flags out-of-range spans and mutually-exclusive same-entity state values over overlapping time.
 - `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark only labels by candidate_id; `state_timeline` merges contiguous same-value intervals.
@@ -34,6 +34,28 @@
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Map interaction evidence to stored frames (events)
+
+**What changed:**
+- `events.py`: `build_interactions(entities, observations, frame_rows=None)` + `_map_sam_to_stored` (exact SAM fi → stored frame_index match, no nearest fallback); runs with <2 mapped frames rejected; output carries `evidence_frames` (stored) + `sam_evidence_frames` (raw provenance). `build_candidates` passes `frame_rows` through and preserves both fields on interaction candidates.
+
+**Why:**
+- 15/80 interaction events on the flock clip were geometrically grounded but cited raw SAM frame indices absent from the sparse observer frame store, failing `evidence.verify`. Nearby-arbitrary substitution would fake retrievability.
+
+**Impact:**
+- Mapped interaction evidence now verifies against the frame store; unmapped runs are dropped (recall cost) instead of emitting unverifiable evidence (precision gain). `frame_rows=None/[]` preserves raw ids (offline tests unchanged). 16 offline tests pass.
+
+### [2026-11-05] — Split implausible SAM tracklets (entities)
+
+**What changed:**
+- `entities.py`: new `_split_implausible_tracklets` (cut wherever `identity.resume_plausible` rejects the hop: gap >5s or drift/size impossible); `_objects_to_candidates` emits one candidate per fragment (`c{stream}_{j}_{oid}_p{k}` when split) with `sam_track_id`/`sam_stream` + per-observation `sam_track_id` provenance; `_coverage_log` adds `split_frags` count.
+
+**Why:**
+- SAM-native tracks contained 6.8–23s jumps / spatially impossible teleports that contaminated the event graph. Stitching (`appearance ≥0.75` + spatial plausibility) could not have created them.
+
+**Impact:**
+- Bad SAM tracks no longer span implausible gaps; fragments keep separate identities and re-merge only via independent appearance+spatial evidence. All fragments preserved as observations (never discarded). 16 offline tests pass.
 
 ### [2026-11-05] — v0.2 live regression: 15/15 rerun, per-fix verdicts + GT identity rescoring
 

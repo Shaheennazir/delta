@@ -113,7 +113,24 @@ def _pair_metric(a: list[float], b: list[float]) -> tuple[float, float]:
     return iou, dist
 
 
-def build_interactions(entities: list[dict], observations: list[dict]) -> list[dict]:
+def _map_sam_to_stored(sam_fis: list[int], frame_rows: list[dict] | None) -> list[int]:
+    """Explicit SAM->stored frame mapping (same video frame domain).
+
+    Observer rows are a sparse subset of video frame indices; SAM tracks are
+    dense. A SAM fi maps to stored evidence only on exact index match.
+    No nearest-neighbour fallback: geometrically correct evidence is useless
+    if the system cannot retrieve the actual supporting frame.
+    When frame_rows is empty/None (offline tests) there is no store to
+    resolve against, so raw ids are preserved.
+    """
+    if not frame_rows:
+        return list(sam_fis)
+    known = {int(r.get("frame_index", -1)) for r in frame_rows}
+    return [int(fi) for fi in sam_fis if int(fi) in known]
+
+
+def build_interactions(entities: list[dict], observations: list[dict],
+                       frame_rows: list[dict] | None = None) -> list[dict]:
     """Pairwise contact/proximity runs from co-present boxes. No model guess.
 
     Grounding contract: an interaction is emitted only when both entities have
@@ -169,11 +186,20 @@ def build_interactions(entities: list[dict], observations: list[dict]) -> list[d
                 dur = max(MIN_INTERACT_S, run[-1]["t"] - run[0]["t"])
                 conf = min(0.95, (conf_of[a_id] + conf_of[b_id]) / 2.0 * 0.7
                            + 0.2 * min(1.0, dur) + 0.1 * min(1.0, peak_iou * 5))
+                sam_fis = [s["fi"] for s in run][:12]
+                if frame_rows:
+                    mapped = _map_sam_to_stored(sam_fis, frame_rows)
+                    if len(mapped) < 2:
+                        continue  # no retrievable stored frames: reject, don't attach nearby arbitrary
+                    evidence_fis = mapped
+                else:
+                    evidence_fis = sam_fis
                 out.append({
                     "entity_ids": [a_id, b_id], "kind": kind,
                     "start_t": round(run[0]["t"], 3), "end_t": round(run[-1]["t"], 3),
                     "confidence": round(conf, 3), "max_iou": round(peak_iou, 4),
-                    "evidence_frames": [s["fi"] for s in run][:12],
+                    "evidence_frames": evidence_fis,
+                    "sam_evidence_frames": sam_fis,
                 })
     out.sort(key=lambda r: (r["start_t"], r["end_t"]))
     return out
@@ -245,7 +271,7 @@ def build_candidates(entities: list[dict], observations: list[dict],
             float(r.get("confidence", 0.5)), frame_rows or [],
             {}, {"audio": kind}))
 
-    for inter in build_interactions(entities, observations):
+    for inter in build_interactions(entities, observations, frame_rows):
         a_id, b_id = inter["entity_ids"]
         la, lb = labels.get(a_id, "object"), labels.get(b_id, "object")
         if inter["kind"] == "contact":
@@ -262,8 +288,10 @@ def build_candidates(entities: list[dict], observations: list[dict],
             f"cand_x_{len(cands) + 1:03d}", action, detail,
             inter["start_t"], inter["end_t"], inter["entity_ids"], "interaction",
             inter["confidence"], frame_rows or [], before, after)
-        # Prefer the exact co-present frames over the time-window heuristic.
+        # Prefer the exact co-present frames over the time-window heuristic,
+        # resolved through the SAM->stored mapping (reject if unmapped).
         c["evidence_frames"] = inter["evidence_frames"][:12]
+        c["sam_evidence_frames"] = inter.get("sam_evidence_frames", [])[:12]
         cands.append(c)
 
     cands.sort(key=lambda c: (c["start_t"], c["end_t"], c["candidate_id"]))
