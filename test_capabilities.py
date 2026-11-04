@@ -181,6 +181,69 @@ def test_calibration_fits_isotonic_and_selects_threshold():
     assert out["n"] >= len(pairs) and out["points"]
 
 
+def test_occlusion_bridges_fragmented_tracklets():
+    import identity
+    desc = [1.0] + [0.0] * 67  # unit vector stand-in: identical appearance
+    frag_a = {"candidate_id": "c0_0_o1", "label": "person", "kind": "person",
+              "confidence": 0.8, "global_id": "g_old_a", "identity_score": 0.0,
+              "_desc": list(desc),
+              "observations": [
+                  {"entity_id": "", "t": 0.0, "frame_index": 0,
+                   "bbox": [10, 10, 30, 50], "track_conf": 0.9},
+                  {"entity_id": "", "t": 0.5, "frame_index": 5,
+                   "bbox": [12, 10, 32, 50], "track_conf": 0.9}]}
+    frag_b = {"candidate_id": "c0_1_o9", "label": "person", "kind": "person",
+              "confidence": 0.8, "global_id": "g_old_b", "identity_score": 0.0,
+              "_desc": list(desc),
+              "observations": [
+                  {"entity_id": "", "t": 3.0, "frame_index": 30,
+                   "bbox": [16, 12, 36, 52], "track_conf": 0.9},
+                  {"entity_id": "", "t": 3.5, "frame_index": 35,
+                   "bbox": [18, 12, 38, 52], "track_conf": 0.9}]}
+    merged = identity.stitch_tracklets([frag_a, frag_b])
+    assert len(merged) == 1, merged
+    assert len(merged[0]["observations"]) == 4
+    assert merged[0]["observations"][0]["t"] == 0.0
+    assert merged[0]["observations"][-1]["t"] == 3.5
+    # Far jump with same appearance must NOT merge (drift guard).
+    far = dict(frag_b, global_id="g_old_c",
+               observations=[
+                   {"entity_id": "", "t": 3.0, "frame_index": 30,
+                    "bbox": [300, 200, 340, 260], "track_conf": 0.9}])
+    split = identity.stitch_tracklets(
+        [dict(frag_a, global_id="g_a2", _desc=list(desc)), far])
+    assert len(split) == 2, split
+    assert identity.resume_plausible([10, 10, 30, 50], [16, 12, 36, 52], 2.5)
+    assert not identity.resume_plausible([10, 10, 30, 50], [300, 200, 340, 260], 2.5)
+
+
+def test_interactions_detect_contact_and_no_hallucination():
+    import events
+    ents = [{"entity_id": "g1", "label": "person", "kind": "person", "confidence": 0.9},
+            {"entity_id": "g2", "label": "ball", "kind": "object", "confidence": 0.9}]
+    obs = [
+        {"entity_id": "g1", "t": 0.0, "frame_index": 0, "bbox": [10, 10, 30, 50], "track_conf": 0.9},
+        {"entity_id": "g2", "t": 0.0, "frame_index": 0, "bbox": [12, 12, 28, 48], "track_conf": 0.9},
+        {"entity_id": "g1", "t": 0.5, "frame_index": 5, "bbox": [10, 10, 30, 50], "track_conf": 0.9},
+        {"entity_id": "g2", "t": 0.5, "frame_index": 5, "bbox": [14, 12, 30, 48], "track_conf": 0.9},
+        {"entity_id": "g1", "t": 4.0, "frame_index": 40, "bbox": [10, 10, 30, 50], "track_conf": 0.9},
+        {"entity_id": "g2", "t": 4.0, "frame_index": 40, "bbox": [200, 200, 220, 240], "track_conf": 0.9},
+    ]
+    inters = events.build_interactions(ents, obs)
+    assert any(r["kind"] == "contact" and set(r["entity_ids"]) == {"g1", "g2"}
+               for r in inters), inters
+    cands = events.build_candidates(ents, obs, [], [], [], 6.0, [])
+    contact = [c for c in cands if c["source"] == "interaction"
+               and set(c["entity_ids"]) == {"g1", "g2"}]
+    assert contact, cands
+    assert all(c["end_t"] > c["start_t"] for c in contact)
+    assert any("contact" in c["action"] for c in contact)
+    # Far-apart pair must not emit contact.
+    far_obs = [o for o in obs if not (o["frame_index"] in (0, 5))]
+    assert not [r for r in events.build_interactions(ents, far_obs)
+                if r["kind"] == "contact"]
+
+
 def test_benchmark_has_no_unconditional_passes():
     import benchmark
     import store
@@ -208,7 +271,7 @@ def test_benchmark_has_no_unconditional_passes():
         {"event_id": "au_1", "kind": "impact", "start_t": 1.0, "end_t": 1.2,
          "confidence": 0.8, "detail": ""}])
     out = benchmark.run_all(sid)
-    assert out["total"] == 10
+    assert out["total"] == 11
     assert {t["result"] for t in out["tests"]} <= {"pass", "fail", "skip"}
     assert out["failed"] == 0, out
     by = {t["test"]: t for t in out["tests"]}
@@ -216,8 +279,9 @@ def test_benchmark_has_no_unconditional_passes():
     assert by["frame_deletion"]["result"] == "pass"
     assert by["counterfactual"]["result"] == "pass"
     assert by["impossible_question"]["result"] == "pass"
+    assert by["occlusion"]["result"] == "pass", by["occlusion"]
     assert all(t["detail"] for t in out["tests"])
     # Empty session must not pretend capabilities it cannot evaluate.
     empty = benchmark.run_all(f"empty_{uuid.uuid4().hex[:6]}")
-    assert empty["total"] == 10 and empty["failed"] == 0
+    assert empty["total"] == 11 and empty["failed"] == 0
     assert sum(1 for t in empty["tests"] if t["result"] == "skip") >= 7

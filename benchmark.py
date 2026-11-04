@@ -116,7 +116,9 @@ def run_all(session_id: str) -> dict:
     else:
         tests.append(_skip("similar_objects", "need >=2 identities"))
 
-    # 6. Across an occlusion gap, the same identity must resume; no other id may
+    # 6. Occlusion recovery: same identity resumes, verified by an
+    #    independent appearance check (recomputed descriptors, not the
+    #    tracker's own claim) + spatial reachability. No other id may
     #    claim the resuming box.
     gaps = []
     for eid in {o["entity_id"] for o in observations}:
@@ -126,14 +128,38 @@ def run_all(session_id: str) -> dict:
             if float(b["t"]) - float(a["t"]) > 1.5:
                 gaps.append((eid, a, b))
     if gaps:
-        collisions = 0
+        import identity as ident_mod
+        collisions, switches, implausible = 0, 0, 0
+        details: list[str] = []
+        by_fi = {int(r["frame_index"]): r for r in frames}
         for eid, before, after in gaps:
             for o in observations:
                 if (o["entity_id"] != eid and int(o["frame_index"]) == int(after["frame_index"])
                         and _iou(o["bbox"], after["bbox"]) > 0.7):
                     collisions += 1
-        tests.append(_t("occlusion", collisions == 0,
-                        f"{len(gaps)} gap(s) >1.5s, {collisions} identity collision(s)"))
+            dt = float(after["t"]) - float(before["t"])
+            if not ident_mod.resume_plausible(before["bbox"], after["bbox"], dt):
+                implausible += 1
+                details.append(f"{eid} implausible resume over {dt:.1f}s")
+            # Independent appearance re-check from stored crops.
+            try:
+                pb = by_fi.get(int(before["frame_index"]), {}).get("path", "")
+                pa = by_fi.get(int(after["frame_index"]), {}).get("path", "")
+                import os as _os
+                if pb and pa and _os.path.exists(pb) and _os.path.exists(pa):
+                    db = ident_mod.descriptor(pb, before["bbox"])
+                    da = ident_mod.descriptor(pa, after["bbox"])
+                    if db and da and ident_mod.cosine(db, da) < 0.50:
+                        switches += 1
+                        details.append(f"{eid} appearance switch "
+                                       f"cos={ident_mod.cosine(db, da):.2f} over {dt:.1f}s")
+            except Exception:
+                pass
+        ok = collisions == 0 and switches == 0 and implausible == 0
+        tests.append(_t("occlusion", ok,
+                        f"{len(gaps)} gap(s) >1.5s, {collisions} collision(s), "
+                        f"{switches} appearance switch(es), {implausible} implausible; "
+                        + "; ".join(details)[:200]))
     else:
         tests.append(_skip("occlusion", "no track gap >1.5s"))
 
@@ -156,6 +182,86 @@ def run_all(session_id: str) -> dict:
         tests.append(_t("temporal_reversal", len(probs) > 0, "; ".join(probs)[:200]))
     else:
         tests.append(_skip("temporal_reversal", "no events"))
+
+    # 9. Interaction understanding: every multi-entity event must be grounded
+    #    in co-present close boxes (precision), and sustained proximity must
+    #    have produced an event (recall). No hallucinated or missed contact.
+    eids = {o["entity_id"] for o in observations}
+    if len(eids) >= 2 and observations and events:
+        def _dist_norm(a: list[float], b: list[float]) -> float:
+            ax, ay = (a[0] + a[2]) / 2.0, (a[1] + a[3]) / 2.0
+            bx, by = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
+            da = max(1.0, ((a[2] - a[0]) ** 2 + (a[3] - a[1]) ** 2) ** 0.5)
+            db = max(1.0, ((b[2] - b[0]) ** 2 + (b[3] - b[1]) ** 2) ** 0.5)
+            return (((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5) / ((da + db) / 2.0)
+
+        def _close(a: list[float], b: list[float]) -> bool:
+            return _iou(a, b) > 0.02 or _dist_norm(a, b) < 1.2
+
+        by_pair_frame: dict[tuple, dict[int, tuple]] = {}
+        for o in observations:
+            by_pair_frame.setdefault(o["entity_id"], {})[int(o["frame_index"])] = o
+        id_list = sorted(eids)
+        # Precision: each multi-entity event needs one supporting frame.
+        hallucinated = 0
+        multi = [e for e in events if len(e.get("entity_ids") or []) >= 2]
+        for e in multi:
+            ids_e = e.get("entity_ids") or []
+            s, en = float(e.get("start_t", 0)), float(e.get("end_t", 0))
+            ok = False
+            for o in observations:
+                if o["entity_id"] not in ids_e:
+                    continue
+                if not (s - 0.5 <= float(o["t"]) <= en + 0.5):
+                    continue
+                for o2 in observations:
+                    if o2["entity_id"] not in ids_e or o2["entity_id"] == o["entity_id"]:
+                        continue
+                    if int(o2.get("frame_index", -1)) != int(o.get("frame_index", -1)):
+                        continue
+                    if _close(o["bbox"], o2["bbox"]):
+                        ok = True
+                        break
+                if ok:
+                    break
+            if not ok:
+                hallucinated += 1
+        # Recall: sustained proximity (>=0.3s, gap<=1s) needs a covering event.
+        missed = 0
+        for i in range(len(id_list)):
+            for j in range(i + 1, len(id_list)):
+                a_id, b_id = id_list[i], id_list[j]
+                ma = by_pair_frame.get(a_id, {})
+                seq = []
+                for fi in sorted(set(ma) & set(by_pair_frame.get(b_id, {}))):
+                    oa, ob = ma[fi], by_pair_frame[b_id][fi]
+                    if _close(oa["bbox"], ob["bbox"]):
+                        seq.append((float(oa["t"] + ob["t"]) / 2.0, fi))
+                runs: list[list] = []
+                for t, fi in seq:
+                    if runs and t - runs[-1][-1][0] <= 1.0:
+                        runs[-1].append((t, fi))
+                    else:
+                        runs.append([(t, fi)])
+                for run in runs:
+                    if run[-1][0] - run[0][0] < 0.3 and len(run) < 2:
+                        continue
+                    rs, re = run[0][0], run[-1][0]
+                    covered = any(
+                        set([a_id, b_id]) <= set(ev.get("entity_ids") or [])
+                        and float(ev.get("start_t", 0)) <= re + 0.5
+                        and float(ev.get("end_t", 0)) >= rs - 0.5
+                        for ev in events)
+                    if not covered:
+                        missed += 1
+        if not multi and missed == 0:
+            tests.append(_skip("interaction", "no sustained proximity to evaluate"))
+        else:
+            tests.append(_t("interaction", hallucinated == 0 and missed == 0,
+                            f"{len(multi)} multi-entity event(s), "
+                            f"{hallucinated} hallucinated, {missed} missed"))
+    else:
+        tests.append(_skip("interaction", "need >=2 identities with events"))
 
     # 9. Empty evidence must not verify.
     ok, reason = evmod.verify([], duration or 1.0, known)

@@ -20,6 +20,10 @@ GRID = 4
 HUE_BINS = 12
 ORIENT_BINS = 8
 MATCH_THRESHOLD = 0.86
+# Gap-bridging (occlusion recovery): looser than MATCH_THRESHOLD because
+# lighting/pose shifts across an occlusion, but still well above chance.
+BRIDGE_APPEARANCE_THR = 0.75
+BRIDGE_MAX_GAP_S = 5.0
 
 
 def descriptor(path: str, bbox: list[float], media_w: float = 0.0) -> list[float]:
@@ -118,13 +122,19 @@ def candidate_descriptor(observations: list[dict], frame_rows: list[dict],
 
 def assign(candidates: list[dict], frame_rows: list[dict], media_wh: tuple,
            session_id: str) -> list[dict]:
-    """Attach persistent global_id to each instance candidate; update gallery."""
+    """Attach persistent global_id to each instance candidate; update gallery.
+
+    SAM often fragments one physical object into several tracklets across an
+    occlusion gap. After gallery matching, tracklets with compatible
+    appearance + spatio-temporal continuity are bridged to one global_id,
+    so reappearance resumes the same identity instead of forking a new one.
+    """
     import store
     gallery = store.get_gallery()
     mw = float(media_wh[0] or 0)
     for c in candidates:
-        desc = candidate_descriptor(c["observations"], frame_rows, mw)
-        hit = match(desc, c.get("kind", "object"), gallery)
+        c["_desc"] = candidate_descriptor(c["observations"], frame_rows, mw)
+        hit = match(c["_desc"], c.get("kind", "object"), gallery)
         if hit:
             gid = hit["global_id"]
             c["identity_score"] = hit["score"]
@@ -133,15 +143,129 @@ def assign(candidates: list[dict], frame_rows: list[dict], media_wh: tuple,
             c["identity_score"] = 0.0
         c["entity_id"] = gid
         c["global_id"] = gid
+    candidates = stitch_tracklets(candidates)
+    for c in candidates:
         for o in c["observations"]:
-            o["entity_id"] = gid
+            o["entity_id"] = c["global_id"]
+        desc = c.pop("_desc", [])
         if desc:
-            store.upsert_gallery(gid, c.get("label", ""), c.get("kind", "object"),
+            store.upsert_gallery(c["global_id"], c.get("label", ""), c.get("kind", "object"),
                                  desc, float(c.get("confidence", 0.0)))
-            gallery = store.get_gallery()
         else:
             # No visual descriptor: keep a kind-scoped row so the id is durable,
             # but do not let an empty vector match anything.
-            store.upsert_gallery(gid, c.get("label", ""), c.get("kind", "object"),
+            store.upsert_gallery(c["global_id"], c.get("label", ""), c.get("kind", "object"),
                                  [], float(c.get("confidence", 0.0)))
     return candidates
+
+
+def _box_iou(a: list[float], b: list[float]) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    aa = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    bb = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    return inter / max(1e-9, aa + bb - inter)
+
+
+def _center(b: list[float]) -> tuple[float, float]:
+    return ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0)
+
+
+def _diag(b: list[float]) -> float:
+    return max(1.0, ((b[2] - b[0]) ** 2 + (b[3] - b[1]) ** 2) ** 0.5)
+
+
+def resume_plausible(before: list[float], after: list[float], dt: float,
+                     max_gap: float = BRIDGE_MAX_GAP_S) -> bool:
+    """Spatial continuity across a track gap: same scale, reachable position."""
+    if dt <= 0 or dt > max_gap:
+        return False
+    cbx, cby = _center(before)
+    cax, cay = _center(after)
+    avg_diag = (_diag(before) + _diag(after)) / 2.0
+    drift = (((cax - cbx) ** 2 + (cay - cby) ** 2) ** 0.5) / max(1e-9, avg_diag)
+    # Allow ~1 diag of drift per second plus 2 diags of slack for re-detection.
+    if drift > 2.0 + 1.0 * dt:
+        return False
+    size_ratio = _diag(after) / max(1e-9, _diag(before))
+    return 0.33 <= size_ratio <= 3.0
+
+
+def stitch_tracklets(candidates: list[dict],
+                     max_gap: float = BRIDGE_MAX_GAP_S,
+                     appearance_thr: float = BRIDGE_APPEARANCE_THR) -> list[dict]:
+    """Merge fragmented tracklets of one physical object across occlusion gaps.
+
+    Two-stage, deterministic: (1) same global_id from the gallery always
+    merges; (2) same-kind, temporally disjoint tracklets merge when appearance
+    matches (>=thr when both descriptors exist) AND the resume box is
+    spatially reachable. Without any descriptor, spatial continuity alone
+    merges only near-overlapping resumes (IoU > 0.1) to avoid identity theft.
+    """
+    for c in candidates:
+        c["observations"] = sorted(c.get("observations", []), key=lambda o: float(o["t"]))
+    # Stage 1: gallery already gave the same id to two fragments -> one entity.
+    by_gid: dict[str, dict] = {}
+    for c in candidates:
+        gid = c.get("global_id", "")
+        if gid in by_gid:
+            prev = by_gid[gid]
+            seen = {(o.get("frame_index"), tuple(o["bbox"])) for o in prev["observations"]}
+            for o in c["observations"]:
+                if (o.get("frame_index"), tuple(o["bbox"])) not in seen:
+                    prev["observations"].append(o)
+            prev["observations"].sort(key=lambda o: float(o["t"]))
+            prev["confidence"] = max(float(prev.get("confidence", 0)),
+                                     float(c.get("confidence", 0)))
+        else:
+            by_gid[gid] = c
+    merged = list(by_gid.values())
+    # Stage 2: bridge unmatched fragments across gaps (earliest first, greedy).
+    merged.sort(key=lambda c: float(c["observations"][0]["t"]) if c["observations"] else 0.0)
+    out: list[dict] = []
+    for cur in merged:
+        if not cur["observations"]:
+            out.append(cur)
+            continue
+        best = None
+        for prev in out:
+            if (prev.get("kind", "object") or "object") != (cur.get("kind", "object") or "object"):
+                continue
+            if prev["global_id"] == cur["global_id"]:
+                best = prev
+                break
+            pe = float(prev["observations"][-1]["t"])
+            cs = float(cur["observations"][0]["t"])
+            gap = cs - pe
+            if gap <= 0 or gap > max_gap:
+                continue
+            da, db = prev.get("_desc") or [], cur.get("_desc") or []
+            app = cosine(da, db) if (da and db) else 0.0
+            spatial = resume_plausible(prev["observations"][-1]["bbox"],
+                                       cur["observations"][0]["bbox"], gap, max_gap)
+            iou = _box_iou(prev["observations"][-1]["bbox"], cur["observations"][0]["bbox"])
+            if da and db:
+                ok = app >= appearance_thr and spatial
+            else:
+                ok = iou > 0.1 and spatial
+            if ok:
+                best = prev
+                break
+        if best is None:
+            out.append(cur)
+        else:
+            seen = {(o.get("frame_index"), tuple(o["bbox"])) for o in best["observations"]}
+            for o in cur["observations"]:
+                if (o.get("frame_index"), tuple(o["bbox"])) not in seen:
+                    best["observations"].append(o)
+            best["observations"].sort(key=lambda o: float(o["t"]))
+            best["confidence"] = max(float(best.get("confidence", 0)),
+                                     float(cur.get("confidence", 0)))
+            # Keep the stronger descriptor for the gallery update.
+            if len(cur.get("_desc") or []) and not best.get("_desc"):
+                best["_desc"] = cur["_desc"]
+    return out

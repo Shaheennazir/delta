@@ -18,6 +18,12 @@ log = logging.getLogger("delta.events")
 MOTION_THRESHOLD = 0.15  # bbox diagonals per second
 PRESENCE_GAP_S = 2.0
 MAX_CANDIDATES = 80
+# Interaction geometry (resolution-independent, in units of avg box diagonal).
+CONTACT_IOU = 0.02
+CONTACT_DIST = 0.6
+NEAR_DIST = 1.2
+MIN_INTERACT_S = 0.2
+MAX_LINK_GAP_S = 1.0
 
 
 def _frames_in(frame_rows: list[dict], start: float, end: float, limit: int = 12) -> list[int]:
@@ -82,6 +88,87 @@ def _direction(dx: float, dy: float) -> str:
     if abs(dx) >= abs(dy):
         return "right" if dx >= 0 else "left"
     return "down" if dy >= 0 else "up"
+
+
+def _pair_iou(a: list[float], b: list[float]) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    aa = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    bb = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    return inter / max(1e-9, aa + bb - inter)
+
+
+def _pair_metric(a: list[float], b: list[float]) -> tuple[float, float]:
+    """(iou, centre_distance / avg_diagonal) — resolution-independent."""
+    iou = _pair_iou(a, b)
+    ax, ay = (a[0] + a[2]) / 2.0, (a[1] + a[3]) / 2.0
+    bx, by = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
+    da = max(1.0, ((a[2] - a[0]) ** 2 + (a[3] - a[1]) ** 2) ** 0.5)
+    db = max(1.0, ((b[2] - b[0]) ** 2 + (b[3] - b[1]) ** 2) ** 0.5)
+    dist = (((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5) / ((da + db) / 2.0)
+    return iou, dist
+
+
+def build_interactions(entities: list[dict], observations: list[dict]) -> list[dict]:
+    """Pairwise contact/proximity runs from co-present boxes. No model guess.
+
+    For each entity pair, per-frame geometry classifies contact (overlap or
+    centres within 0.6 diag) vs near (within 1.2 diag). Consecutive
+    qualifying frames linked across <=1s gaps become one interaction with
+    exact start/end from the observations. Contact wins over near.
+    """
+    ids = [e["entity_id"] for e in entities]
+    if len(ids) < 2:
+        return []
+    conf_of = {e["entity_id"]: float(e.get("confidence", 0.5)) for e in entities}
+    by_frame: dict[int, dict] = {}
+    for o in observations:
+        if o.get("entity_id") not in conf_of:
+            continue
+        by_frame.setdefault(int(o.get("frame_index", 0)), {})[o["entity_id"]] = o
+    out: list[dict] = []
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a_id, b_id = ids[i], ids[j]
+            seq: list[dict] = []  # co-present frames with geometry
+            for fi in sorted(by_frame):
+                row = by_frame[fi]
+                if a_id not in row or b_id not in row:
+                    continue
+                oa, ob = row[a_id], row[b_id]
+                iou, dist = _pair_metric(oa["bbox"], ob["bbox"])
+                kind = ("contact" if (iou > CONTACT_IOU or dist < CONTACT_DIST)
+                        else "near" if dist < NEAR_DIST else "")
+                if kind:
+                    seq.append({"t": float(oa["t"] + ob["t"]) / 2.0, "fi": fi,
+                                "kind": kind, "iou": iou, "dist": round(dist, 3)})
+            # Link into runs; a contact anywhere upgrades the run to contact.
+            runs: list[list[dict]] = []
+            for s in seq:
+                if runs and s["t"] - runs[-1][-1]["t"] <= MAX_LINK_GAP_S:
+                    runs[-1].append(s)
+                else:
+                    runs.append([s])
+            for run in runs:
+                if run[-1]["t"] - run[0]["t"] < MIN_INTERACT_S and len(run) < 2:
+                    continue
+                kind = "contact" if any(s["kind"] == "contact" for s in run) else "near"
+                peak_iou = max(s["iou"] for s in run)
+                dur = max(MIN_INTERACT_S, run[-1]["t"] - run[0]["t"])
+                conf = min(0.95, (conf_of[a_id] + conf_of[b_id]) / 2.0 * 0.7
+                           + 0.2 * min(1.0, dur) + 0.1 * min(1.0, peak_iou * 5))
+                out.append({
+                    "entity_ids": [a_id, b_id], "kind": kind,
+                    "start_t": round(run[0]["t"], 3), "end_t": round(run[-1]["t"], 3),
+                    "confidence": round(conf, 3), "max_iou": round(peak_iou, 4),
+                    "evidence_frames": [s["fi"] for s in run][:12],
+                })
+    out.sort(key=lambda r: (r["start_t"], r["end_t"]))
+    return out
 
 
 def build_candidates(entities: list[dict], observations: list[dict],
@@ -149,6 +236,27 @@ def build_candidates(entities: list[dict], observations: list[dict],
             str(r.get("detail", ""))[:300], s, e, [], "audio",
             float(r.get("confidence", 0.5)), frame_rows or [],
             {}, {"audio": kind}))
+
+    for inter in build_interactions(entities, observations):
+        a_id, b_id = inter["entity_ids"]
+        la, lb = labels.get(a_id, "object"), labels.get(b_id, "object")
+        if inter["kind"] == "contact":
+            action, detail = f"{la} contacts {lb}", (
+                f"{la} and {lb} overlap/adjacent over "
+                f"{inter['end_t'] - inter['start_t']:.1f}s (peak IoU {inter['max_iou']:.2f})")
+            before, after = {"contact": "false"}, {"contact": "true", "with": b_id}
+        else:
+            action, detail = f"{la} near {lb}", (
+                f"{la} and {lb} in sustained proximity over "
+                f"{inter['end_t'] - inter['start_t']:.1f}s")
+            before, after = {"proximity": "far"}, {"proximity": "near", "with": b_id}
+        c = _candidate(
+            f"cand_x_{len(cands) + 1:03d}", action, detail,
+            inter["start_t"], inter["end_t"], inter["entity_ids"], "interaction",
+            inter["confidence"], frame_rows or [], before, after)
+        # Prefer the exact co-present frames over the time-window heuristic.
+        c["evidence_frames"] = inter["evidence_frames"][:12]
+        cands.append(c)
 
     cands.sort(key=lambda c: (c["start_t"], c["end_t"], c["candidate_id"]))
     return cands[:MAX_CANDIDATES]

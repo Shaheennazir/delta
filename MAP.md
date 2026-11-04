@@ -1,7 +1,8 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
 - `schemas.py` → Pydantic v2 contracts: VideoSessionInput, SessionReport (answer + answer_evidence/answer_confidence/answer_verification/answer_calibration + av_offset_s/av_sync_confidence), EvidenceSpan (source_id/kind/verification), AnswerClaim, GraphEvent (candidate_id/source), QAOutcome/QAResponse(abstained).
-- `identity.py` → NEW: instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update.
+- `identity.py` → NEW: instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update. PLUS explicit occlusion bridging: `resume_plausible` (drift ≤2+dt diags, size ratio 0.33–3) + `stitch_tracklets` (stage-1 same-global_id merge, stage-2 same-kind gap bridge ≤5s requiring appearance ≥0.75 + spatial reachability, or IoU>0.1 when descriptorless); `assign` merges fragments before gallery update.
+- `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark labels by candidate_id only; `state_timeline` merges contiguous same-value intervals. PLUS `build_interactions` (pairwise IoU + centre-dist/diag: contact if IoU>0.02 or dist<0.6, near if dist<1.2; runs linked ≤1s, ≥0.2s) emitting `interaction`-source candidates with entity_ids=[a,b]; wired into `build_candidates` + preserved through `extract_events`.
 - `confidence.py` → NEW: isotonic (PAVA) calibration from labelled outcomes, Brier/ECE, selective-prediction threshold at max 10% risk; `apply_saved` returns (score, "isotonic"|"uncalibrated"); no calibrated claim without outcomes.
 - `av_align.py` → NEW: audio-RMS vs visual-motion cross-correlation on 50 ms grid, ±2 s lag search; `estimate_offset` + `events_offset`; flat/insufficient signals report confidence 0 with method flag, never fake sync.
 - `retrieval.py` → NEW: uniform evidence index (events/entities/speech/OCR/audio) with IDF lexical score + time-hint overlap fraction; stored confidence is tiebreak only; spans + frame ids come from the index, never the model.
@@ -21,7 +22,9 @@
 - `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark only labels by candidate_id; `state_timeline` merges contiguous same-value intervals.
 - `evidence.py` → verify gate checks span bounds + frame-id existence + frame-time-inside-span (tol 1.0 s); `calibrate_detail` routes through persisted isotonic curve; `decision` uses selective threshold from outcomes (0.5 prior when none); `abstain` carries reason.
 - `investigator.py` → plan → retrieve (retrieval.py over full index) → inspect (must cite evidence ids) → gate (resolve ids to stored spans, frame-time verify, calibrate, selective abstain). No model-authored timestamps.
-- `benchmark.py` → 10 adversarial tests, all derived from stored data; unevaluable tests report `skip`, never pass. Covers shuffle, deletion, audio-missing honesty, measured +2 s desync shift, cross-identity IoU, occlusion resume, OCR time attribution, reversal, empty-evidence, high-confidence abstention.
+- `benchmark/` → Long-RVOS mini-benchmark harness (`long_rvos.py`: select/fetch/build/run over `valid` split; 15 clips ≤300 annotated frames ranked by objects+expressions+dynamic; 640px mp4s in `clips/`; per-video engine+`benchmark.run_all` JSON in `results/`). `shortcut`: no mask-IoU scoring (engine outputs boxes/spans, not masks).
+- `benchmark.py` → 11 adversarial tests (was 10), all derived from stored data; unevaluable tests report `skip`, never pass. Occlusion now triple-checked (collision + independent descriptor cosine ≥0.50 from stored crops + `resume_plausible`); NEW `interaction` test (precision: every ≥2-entity event needs a co-present close frame; recall: sustained ≤1s-linked ≥0.3s proximity needs a covering event). Covers shuffle, deletion, audio-missing honesty, measured +2 s desync shift, cross-identity IoU, occlusion resume, OCR time attribution, reversal, interaction precision/recall, empty-evidence, high-confidence abstention.
+- `test_capabilities.py` → 10 tests (was 8): NEW `test_occlusion_bridges_fragmented_tracklets` (same-appearance fragments merge, far jump does not) + `test_interactions_detect_contact_and_no_hallucination` (contact emitted, far pair silent); benchmark total 11 asserted.
 - `store.py` → adds `entity_gallery`, `calibration_points`, `outcomes` tables; sessions gains answer_evidence/confidence/verification/calibration + av_offset/confidence; entities gains global_id; qa_runs gains raw_confidence.
 - `agent.py` → tracking passes frame_rows/session_id for descriptors; fusion attaches frames actually inside each span, verifies answer claims per-claim, calibrates, abstains the direct answer when ungated.
 - `orchestrator.py` → measured A/V offset applied only when av_align reports a valid measurement; transcript turns + audio rows shifted to video clock; answer evidence/confidence/verification persisted.
@@ -31,6 +34,21 @@
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Expert occlusion recovery + real interaction understanding
+
+**What changed:**
+- `identity.py`: added `BRIDGE_APPEARANCE_THR=0.75`/`BRIDGE_MAX_GAP_S=5.0`, `_box_iou/_center/_diag`, `resume_plausible`, `stitch_tracklets` (same-id merge + greedy same-kind gap bridge with appearance+spatial gate); `assign` now computes `_desc` per candidate, bridges, then updates gallery once per merged entity.
+- `events.py`: added `CONTACT_IOU/CONTACT_DIST/NEAR_DIST/MIN_INTERACT_S/MAX_LINK_GAP_S`, `_pair_iou/_pair_metric`, `build_interactions` (contact/near runs with exact observation timestamps, confidence from pair confidence + duration + peak IoU); `build_candidates` emits interaction candidates with `entity_ids=[a,b]`, typed contact/proximity state, `source="interaction"`.
+- `benchmark.py`: occlusion test triple-checks collision + recomputed appearance cosine (<0.50 = switch) + `resume_plausible`; NEW `interaction` test (hallucinated vs missed); total 10 → 11.
+- `test_capabilities.py`: NEW tracklet-stitching + contact tests; totals 10 → 11. `test_engine2.py`: total 10 → 11.
+
+**Why:**
+- Occlusion was collision-absence only (tautological: gaps are defined per-entity, so resume was assumed). Interaction was presence/motion only with no contact predicate and no benchmark coverage.
+- Now reappearance is independently verified (appearance + motion continuity) and fragmented SAM tracklets are explicitly reunited; contact/proximity are measured geometry with precision+recall enforcement.
+
+**Impact:**
+- `entities.track_session` output shrinks when fragments merge (fewer entities, longer observations); `save_entities` REPLACE semantics unchanged. Benchmark `total` is 11 — callers asserting 10 must update. All 29 tests pass (16 offline capability/engine + live API).
 
 ### [2026-11-04] — Full capability pass: identity, alignment, retrieval, calibrated abstention, honest benchmark
 

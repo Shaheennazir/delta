@@ -1,0 +1,95 @@
+{
+  "video_id": "24b7b95ca4",
+  "status": "completed",
+  "answer": "Yes \u2014 a woman on the right side of the hallway crowd is first seen chatting with only her head visible above the others, then as the camera moves closer she looks toward the lens, crosses her arms in front of her chest, and steps out of frame.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 164,
+  "n_entities": 0,
+  "n_events": 0,
+  "ablation_level": 2,
+  "benchmark": {
+    "session_id": "ses_04a2b749",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "skip",
+        "detail": "need >=2 events"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "skip",
+        "detail": "no events"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 4,
+    "skipped": 7,
+    "failed": 0,
+    "total": 11,
+    "ablation": {
+      "level": 2,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 164,
+        "entities": 0,
+        "events": 0,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The woman, standing on the right side of the crowd, is chatting with only her head visible. Later, as the camera moves, she notices it, crosses her arms in front of her chest, and leaves the frame.",
+  "gt": {
+    "annotated_frames_with_masks": 226,
+    "masks_total": 750,
+    "mean_mask_fill_20": 0.0189
+  }
+}

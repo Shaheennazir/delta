@@ -112,4 +112,4 @@ def test_store_roundtrip(tmp_path=None):
                               "detail": "walks"}])
     assert store.get_events("t1")[0]["action"] == "walk"
     out = __import__("benchmark").run_all("t1")
-    assert out["total"] == 10 and out["failed"] == 0, out
+    assert out["total"] == 11 and out["failed"] == 0, out

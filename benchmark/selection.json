@@ -1,0 +1,320 @@
+{
+  "split": "valid",
+  "clips": [
+    {
+      "video_id": "5d262b025c",
+      "score": 42.06,
+      "n_frames": 188,
+      "n_expressions": 30,
+      "n_objects": 10,
+      "n_dyn_hybrid": 20,
+      "exp_id": "15",
+      "obj_id": 7,
+      "exp_type": "dynamic",
+      "focus": "The man is standing at the far right of the crowd, looking at the woman in front of him, covering his mouth and laughing.",
+      "gt": {
+        "annotated_frames_with_masks": 188,
+        "masks_total": 1223,
+        "mean_mask_fill_20": 0.0165
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/5d262b025c.mp4",
+      "clip_images": 188,
+      "clip_fps": 6.0,
+      "clip_duration_s": 31.3
+    },
+    {
+      "video_id": "fb8caa28e4",
+      "score": 39.55,
+      "n_frames": 289,
+      "n_expressions": 26,
+      "n_objects": 10,
+      "n_dyn_hybrid": 16,
+      "exp_id": "8",
+      "obj_id": 4,
+      "exp_type": "dynamic",
+      "focus": "A boy lies on the sofa covering his eyes with his hands, then gets up, picks up a puppy from a box, lies back on the sofa, and finally gets up to put the puppy back into the box.",
+      "gt": {
+        "annotated_frames_with_masks": 289,
+        "masks_total": 1957,
+        "mean_mask_fill_20": 0.0357
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/fb8caa28e4.mp4",
+      "clip_images": 289,
+      "clip_fps": 6.0,
+      "clip_duration_s": 48.2
+    },
+    {
+      "video_id": "b4192dbf2b",
+      "score": 35.42,
+      "n_frames": 235,
+      "n_expressions": 36,
+      "n_objects": 7,
+      "n_dyn_hybrid": 24,
+      "exp_id": "1",
+      "obj_id": 1,
+      "exp_type": "hybrid",
+      "focus": "The boy wearing a yellow short-sleeve shirt and red shorts is practicing basketball in a group of kids practicing basketball.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 1051,
+        "mean_mask_fill_20": 0.035
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/b4192dbf2b.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "6fb7a04167",
+      "score": 29.11,
+      "n_frames": 298,
+      "n_expressions": 30,
+      "n_objects": 6,
+      "n_dyn_hybrid": 18,
+      "exp_id": "17",
+      "obj_id": 15,
+      "exp_type": "dynamic",
+      "focus": "The man is sitting in a chair, holding a cup in his right hand, chatting with the people around him, then bringing the cup close to his nose to smell it, then putting it down, pushing a cup on the table toward a man, and finally bringing the cup to his mouth to prepare to drink.",
+      "gt": {
+        "annotated_frames_with_masks": 275,
+        "masks_total": 1019,
+        "mean_mask_fill_20": 0.1442
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/6fb7a04167.mp4",
+      "clip_images": 298,
+      "clip_fps": 6.0,
+      "clip_duration_s": 49.7
+    },
+    {
+      "video_id": "24b7b95ca4",
+      "score": 24.02,
+      "n_frames": 235,
+      "n_expressions": 24,
+      "n_objects": 5,
+      "n_dyn_hybrid": 15,
+      "exp_id": "11",
+      "obj_id": 3,
+      "exp_type": "dynamic",
+      "focus": "The woman, standing on the right side of the crowd, is chatting with only her head visible. Later, as the camera moves, she notices it, crosses her arms in front of her chest, and leaves the frame.",
+      "gt": {
+        "annotated_frames_with_masks": 226,
+        "masks_total": 750,
+        "mean_mask_fill_20": 0.0189
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/24b7b95ca4.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "6da16715cd",
+      "score": 23.32,
+      "n_frames": 235,
+      "n_expressions": 7,
+      "n_objects": 7,
+      "n_dyn_hybrid": 7,
+      "exp_id": "3",
+      "obj_id": 4,
+      "exp_type": "hybrid",
+      "focus": "A shirtlessman wearing a camouflage hat is sitting on a chair, waving a fan in his hand, adjusting a black short-sleeve shirt, and then pointing at a man on the field while laughing heartily.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 1203,
+        "mean_mask_fill_20": 0.0505
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/6da16715cd.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "bda2f20019",
+      "score": 21.22,
+      "n_frames": 235,
+      "n_expressions": 24,
+      "n_objects": 4,
+      "n_dyn_hybrid": 16,
+      "exp_id": "3",
+      "obj_id": 1,
+      "exp_type": "dynamic",
+      "focus": "The woman brushes her hair with her left hand, then bends down to pet the dog, then pulls the leash with her right hand, bending down to look at the dog, then stands up, brushes her hair with her left hand again, then turns her head to look left a few times.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 582,
+        "mean_mask_fill_20": 0.0322
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/bda2f20019.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "18b160d3a7",
+      "score": 17.62,
+      "n_frames": 235,
+      "n_expressions": 16,
+      "n_objects": 4,
+      "n_dyn_hybrid": 10,
+      "exp_id": "5",
+      "obj_id": 2,
+      "exp_type": "dynamic",
+      "focus": "The woman is sitting at the desk, chatting and laughing with the woman in a black short-sleeve shirt with white stripes, while looking at the camera.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 543,
+        "mean_mask_fill_20": 0.1404
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/18b160d3a7.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "0ddb35f585",
+      "score": 16.07,
+      "n_frames": 285,
+      "n_expressions": 5,
+      "n_objects": 5,
+      "n_dyn_hybrid": 5,
+      "exp_id": "1",
+      "obj_id": 2,
+      "exp_type": "hybrid",
+      "focus": "A woman wearing a blue life jacket lies on a red-and-white kayak, drifting forward on the water, with another woman in a red and yellow life jacket on her right.",
+      "gt": {
+        "annotated_frames_with_masks": 272,
+        "masks_total": 1042,
+        "mean_mask_fill_20": 0.0184
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/0ddb35f585.mp4",
+      "clip_images": 285,
+      "clip_fps": 6.0,
+      "clip_duration_s": 47.5
+    },
+    {
+      "video_id": "5d2c735adb",
+      "score": 16.02,
+      "n_frames": 235,
+      "n_expressions": 12,
+      "n_objects": 4,
+      "n_dyn_hybrid": 8,
+      "exp_id": "7",
+      "obj_id": 4,
+      "exp_type": "dynamic",
+      "focus": "A camel runs off into the distance, then turns around and keeps running.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 747,
+        "mean_mask_fill_20": 0.025
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/5d2c735adb.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "1088228079",
+      "score": 16.02,
+      "n_frames": 235,
+      "n_expressions": 12,
+      "n_objects": 4,
+      "n_dyn_hybrid": 8,
+      "exp_id": "7",
+      "obj_id": 4,
+      "exp_type": "dynamic",
+      "focus": "The woman in black clothes grabs the rocks in front of her, continuously climbing upwards, then loses grip and falls from the cliff.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 663,
+        "mean_mask_fill_20": 0.0256
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/1088228079.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "235ff86d37",
+      "score": 16.02,
+      "n_frames": 235,
+      "n_expressions": 12,
+      "n_objects": 4,
+      "n_dyn_hybrid": 8,
+      "exp_id": "7",
+      "obj_id": 4,
+      "exp_type": "dynamic",
+      "focus": "The bird flies onto the roof of the birdhouse, then hops down to eat. The scene switches to another bird standing on the roof.",
+      "gt": {
+        "annotated_frames_with_masks": 235,
+        "masks_total": 682,
+        "mean_mask_fill_20": 0.0164
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/235ff86d37.mp4",
+      "clip_images": 235,
+      "clip_fps": 6.0,
+      "clip_duration_s": 39.2
+    },
+    {
+      "video_id": "d33c8343bc",
+      "score": 15.9,
+      "n_frames": 260,
+      "n_expressions": 12,
+      "n_objects": 4,
+      "n_dyn_hybrid": 8,
+      "exp_id": "5",
+      "obj_id": 3,
+      "exp_type": "dynamic",
+      "focus": "The pie filled with yellow jelly and bordered with cream is rotating on the freezer shelf with the other three pies.",
+      "gt": {
+        "annotated_frames_with_masks": 206,
+        "masks_total": 629,
+        "mean_mask_fill_20": 0.0398
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/d33c8343bc.mp4",
+      "clip_images": 260,
+      "clip_fps": 6.0,
+      "clip_duration_s": 43.3
+    },
+    {
+      "video_id": "c4638cc87e",
+      "score": 15.86,
+      "n_frames": 188,
+      "n_expressions": 18,
+      "n_objects": 3,
+      "n_dyn_hybrid": 12,
+      "exp_id": "9",
+      "obj_id": 3,
+      "exp_type": "dynamic",
+      "focus": "The man is performing ballet, sitting on a chair and adjusting the bodies of the two female dancers for the performance. He then stands and continues to showcase his dance moves.",
+      "gt": {
+        "annotated_frames_with_masks": 188,
+        "masks_total": 564,
+        "mean_mask_fill_20": 0.0451
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/c4638cc87e.mp4",
+      "clip_images": 188,
+      "clip_fps": 6.0,
+      "clip_duration_s": 31.3
+    },
+    {
+      "video_id": "0d0ebe00cc",
+      "score": 15.5,
+      "n_frames": 259,
+      "n_expressions": 18,
+      "n_objects": 3,
+      "n_dyn_hybrid": 12,
+      "exp_id": "7",
+      "obj_id": 2,
+      "exp_type": "dynamic",
+      "focus": "The dog grabs the man's hand, then the man holds the dog's mouth, the dog occasionally sticks out its tongue, and it starts baring its teeth when another dog gets closer.",
+      "gt": {
+        "annotated_frames_with_masks": 258,
+        "masks_total": 537,
+        "mean_mask_fill_20": 0.2283
+      },
+      "clip": "/home/shaheennazir/Desktop/delta/benchmark/clips/0d0ebe00cc.mp4",
+      "clip_images": 259,
+      "clip_fps": 6.0,
+      "clip_duration_s": 43.2
+    }
+  ]
+}

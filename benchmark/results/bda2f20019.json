@@ -1,0 +1,95 @@
+{
+  "video_id": "bda2f20019",
+  "status": "completed",
+  "answer": "Yes \u2014 the woman brushes her hair with her left hand, then bends down to pet the dog, then pulls the leash with her right hand while bending down to look at the dog, then stands up, brushes her hair with her left hand again, and then turns her head to look left a few times.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 179,
+  "n_entities": 2,
+  "n_events": 39,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_3ae50e45",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "fail",
+        "detail": "39 events reordered by timestamp, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.62"
+      },
+      {
+        "test": "occlusion",
+        "result": "fail",
+        "detail": "3 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 2 implausible; g_e7d427460b implausible resume over 4.2s; g_e7d427460b implausible resume over 3.8s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "fail",
+        "detail": "1 OCR rows, 1 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (10.67)"
+      },
+      {
+        "test": "interaction",
+        "result": "pass",
+        "detail": "4 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 7,
+    "skipped": 1,
+    "failed": 3,
+    "total": 11,
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 179,
+        "entities": 2,
+        "events": 39,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The woman brushes her hair with her left hand, then bends down to pet the dog, then pulls the leash with her right hand, bending down to look at the dog, then stands up, brushes her hair with her left hand again, then turns her head to look left a few times.",
+  "gt": {
+    "annotated_frames_with_masks": 235,
+    "masks_total": 582,
+    "mean_mask_fill_20": 0.0322
+  }
+}
