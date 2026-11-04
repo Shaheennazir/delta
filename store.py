@@ -151,6 +151,16 @@ def get_session(session_id: str) -> dict | None:
         return dict(r) if r else None
 
 
+def list_sessions(limit: int = 50) -> list[dict]:
+    """Newest-first session index for the chat sidebar. Survives restarts."""
+    init_db()
+    with _lock, _connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT session_id,title,status,focus,video_url,updated_at FROM sessions "
+            "WHERE session_id NOT GLOB 'bench_*' "
+            "ORDER BY updated_at DESC LIMIT ?", (limit,))]
+
+
 def save_progress(session_id: str, stage: str, detail: str = "", error: str | None = None) -> None:
     init_db()
     with _lock, _connect() as c:

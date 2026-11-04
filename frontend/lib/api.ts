@@ -30,6 +30,27 @@ export function subscribeSession(
   return () => src.close();
 }
 
+export interface SessionSummary {
+  session_id: string;
+  title: string;
+  status: string;
+  focus: string;
+  video_url: string;
+  updated_at: number;
+}
+
+export function uploadUrlToHttp(videoUrl: string): string {
+  return videoUrl.startsWith("upload://")
+    ? `${API_BASE}/api/v1/uploads/${encodeURIComponent(videoUrl.slice("upload://".length))}`
+    : videoUrl;
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  const res = await fetch(`${API_BASE}/api/v1/sessions`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`GET /sessions failed: ${res.status}`);
+  return ((await res.json()).sessions ?? []) as SessionSummary[];
+}
+
 export async function createSession(payload: VideoSessionPayload): Promise<string> {
   const res = await fetch(`${API_BASE}/api/v1/sessions`, {
     method: "POST",
@@ -96,6 +117,16 @@ export async function fetchTrace(sessionId: string): Promise<TraceRow[]> {
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`GET /trace failed: ${res.status}`);
   return ((await res.json()).trace ?? []) as TraceRow[];
+}
+
+export async function sendChat(sessionId: string, message: string): Promise<QARecord & { route?: string; summary?: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/sessions/${sessionId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: message }),
+  });
+  if (!res.ok) throw new Error(`POST /chat failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as QARecord & { route?: string; summary?: string };
 }
 
 export async function askQuestion(sessionId: string, question: string): Promise<QARecord & { trace?: unknown }> {

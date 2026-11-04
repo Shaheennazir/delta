@@ -90,6 +90,22 @@ def _require_report(session_id: str) -> SessionReport:
     return report
 
 
+@app.get("/api/v1/sessions")
+def list_sessions() -> dict:
+    import store
+    return {"sessions": store.list_sessions()}
+
+
+@app.get("/api/v1/uploads/{name}")
+def serve_upload(name: str):
+    from media import UPLOAD_DIR
+    base = os.path.abspath(UPLOAD_DIR)
+    path = os.path.normpath(os.path.join(base, os.path.basename(name)))
+    if not path.startswith(base) or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="unknown upload")
+    return FileResponse(path, media_type="video/mp4")
+
+
 @app.get("/api/v1/sessions/{session_id}")
 def read_session(session_id: str) -> SessionReport:
     return _require_report(session_id)
@@ -267,6 +283,15 @@ def record_answer_outcome(session_id: str, body: QAOutcome) -> dict:
     import store
     store.save_outcome(session_id, "answer", float(report.answer_confidence), body.correct)
     return {"session_id": session_id, **confidence.fit_from_outcomes()}
+
+
+@app.post("/api/v1/sessions/{session_id}/chat")
+async def chat_message(session_id: str, body: QARequest) -> dict:
+    report = _require_report(session_id)
+    if report.status != "completed":
+        raise HTTPException(status_code=409, detail="session not completed yet")
+    import chat as chat_mod
+    return await chat_mod.answer_chat(session_id, body.question)
 
 
 @app.post("/api/v1/sessions/{session_id}/qa")

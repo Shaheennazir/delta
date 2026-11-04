@@ -1,7 +1,9 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
+- `chat.py` → NEW: session chat router — Spark classifier picks followup (answer from stored analysis only) | investigate (`investigator.answer_question`, retrieval-gated) | reanalyze (fresh `intel.analyze_video` on the same upload + frame-verified spans); every route persists to `qa_runs` and logs `chat_router`/`reanalyze` to the trace store; classifier failure defaults to investigate.
+- `frontend/app/page.tsx` → VideoChat (replaces VideoWorkspace): landing hero (upload + question + presets) → live status bubble (stage pills + elapsed) → answer bubble with seekable evidence chips → follow-up composer; header `engine` toggle reveals TracePanel + event graph + entities + transcript; `QaPanel`/`BenchmarkPanel` no longer rendered (APIs unchanged).
 - `frontend/components/EnginePanels.tsx` → `EventList` (event cards with source badge + stored evidence frame ids + seek; empty-frame state reads "no retrievable frames"), `QaPanel` (investigator input + abstained banner + verification/confidence/calibration + clickable evidence spans), `BenchmarkPanel` (runs 11 adversarial tests), `TracePanel`, `EntityList`.
-- `frontend/app/page.tsx` → VideoWorkspace: answer evidence spans are clickable seek buttons (start + first frame ids); event graph + moments share `seekTo`; progress checklist + trace + transcript/themes/moments.
+- `frontend/lib/api.ts` → adds `sendChat(sessionId, message)` (POST `/chat`), `listSessions()` (GET `/sessions`), `uploadUrlToHttp()` (`upload://name` → `/api/v1/uploads/name`); rest unchanged.
 
 - `schemas.py` → Pydantic v2 contracts: VideoSessionInput, SessionReport (answer + answer_evidence/answer_confidence/answer_verification/answer_calibration + av_offset_s/av_sync_confidence), EvidenceSpan (source_id/kind/verification), AnswerClaim, GraphEvent (candidate_id/source), QAOutcome/QAResponse(abstained).
 - `identity.py` → instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update. CONSTRAINED stitching: `resume_plausible` (drift ≤2+dt diags, size 0.33–3) + `stitch_tracklets` with explicit rejections (temporal overlap/shared frame, impossible displacement, appearance <thr, simultaneous-track conflict, scene-cut without IoU>0.1+appearance ≥0.90, gap>5s or gap>2.5s without appearance ≥0.85); stage-1 same-gid merges ONLY when `_can_merge` passes else forks unknown id; `assign` resolves simultaneous same-gid conflicts (strongest keeps id) and forwards scene-cut times from frame_rows.
@@ -31,12 +33,40 @@
 - `store.py` → adds `entity_gallery`, `calibration_points`, `outcomes` tables; sessions gains answer_evidence/confidence/verification/calibration + av_offset/confidence; entities gains global_id; qa_runs gains raw_confidence.
 - `agent.py` → tracking passes frame_rows/session_id for descriptors; fusion attaches frames actually inside each span, verifies answer claims per-claim, calibrates, abstains the direct answer when ungated.
 - `orchestrator.py` → measured A/V offset applied only when av_align reports a valid measurement; transcript turns + audio rows shifted to video clock; answer evidence/confidence/verification persisted.
-- `app.py` → FastAPI + engine endpoints (`/events /entities /frames /ocr /audio-events /trace /tools /qa /benchmark` plus NEW `/state /alignment /calibration`, POST `/qa/{qa_id}/outcome`, POST `/outcome`); `/segmentation` returns real entity lanes; SSE carries the last 20 trace rows; unknown sessions 404.
+- `app.py` → FastAPI + engine endpoints (`/events /entities /frames /ocr /audio-events /trace /tools /qa /benchmark` plus NEW `/state /alignment /calibration`, POST `/qa/{qa_id}/outcome`, POST `/outcome`, POST `/chat` → `chat.answer_chat`, 409 until completed); `/segmentation` returns real entity lanes; SSE carries the last 20 trace rows; unknown sessions 404.
 - `test_api.py` → real-pipeline tests: 422 sandboxing, upload validation, `test_create_session_real_pipeline_completes` (tiny silent clip → completed, non-empty summary, `has_audio is False`), SSE completes.
 - `frontend/` → Next.js 15: app/page.tsx (VideoWorkspace: native `<video>`, Answer card (the direct reply to the viewer prompt), summary/themes/transcript/turns, progress checklist `queued/uploading/preparing/observing/perceiving/events/understanding/verifying/completed`, live agent TracePanel sent/waiting/received), components (VideoConfigSidebar, MomentCards, MomentTimelineBar), lib/api.ts + types.ts (VideoMoment/TranscriptTurn/SessionReport). `npm run build` clean. Deleted: DrillConfigSidebar, CoachDiagnosticCards, InteractiveStage, SamVideoPlayer, TacticalSvgOverlay, ViolationTimelineBar, lib/sam.ts.
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Chat-first UI + intent-routed follow-ups (chat box, live session, engine toggle)
+
+**What changed:**
+- `chat.py` (new): `answer_chat(session_id, message)` — Spark intent classifier → followup (stored analysis only) / investigate (`investigator.answer_question`) / reanalyze (fresh `intel.analyze_video` + span verify + calibrate); all persist to `qa_runs`, all log to trace.
+- `app.py`: new `POST /api/v1/sessions/{session_id}/chat` (`QARequest` body, 409 until completed).
+- `frontend/lib/api.ts`: new `sendChat()`.
+- `frontend/app/page.tsx` (rewritten): landing hero → live status bubble → answer + follow-up thread; header `engine` toggle for trace/events/entities/transcript; evidence chips seek the video.
+
+**Why:**
+- The old workspace was a dashboard (sidebar + panels), not a chat box: no clean upload→ask→watch→follow-up flow, follow-ups needed the buried QaPanel, and engine internals were always on screen.
+
+**Impact:**
+- Analysis is saved per session in sqlite (unchanged) and reused by all three chat routes; `QaPanel`/`BenchmarkPanel` unmounted but their APIs still work; `npm run build` clean, backend route verified registered.
+
+### [2026-11-05] — Multi-session chats + persistent state (sidebar, restore, replayable video)
+
+**What changed:**
+- `store.py`: new `list_sessions()` (newest-first id/title/status/focus/video_url; excludes `bench_*` harness rows via `NOT GLOB 'bench_*'`).
+- `app.py`: new `GET /api/v1/sessions` (chat index) + `GET /api/v1/uploads/{name}` (serves `uploads/` MP4s with the same traversal guard as frames, so old sessions stay playable).
+- `frontend/app/page.tsx`: ☰ sidebar (New chat + per-session status dot/title/ago), `openSession()` hydrates report + full QA thread + engine data, still-running sessions resume the poll loop, last session id in localStorage and auto-restored on reload.
+- `frontend/lib/api.ts`: `listSessions()`, `uploadUrlToHttp()`; non-`upload://` videos get no player src instead of a broken path.
+
+**Why:**
+- State already survived in sqlite but the UI was single-session and died on reload: no session index, no history view, and blob-URL video was unplayable after refresh.
+
+**Impact:**
+- Sidebar lists user chats only (benchmark/`bench_*` rows hidden, APIs unchanged); videos uploaded via the app replay forever from `uploads/`; `npm run build` clean, both endpoints verified live.
 
 ### [2026-11-05] — v0.3 live regression: track split + evidence mapping + retry
 
