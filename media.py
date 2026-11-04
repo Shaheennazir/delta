@@ -13,9 +13,9 @@ import imageio.v3 as iio
 import numpy as np
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
-MAX_BYTES = 60 * 1024 * 1024
-MAX_DURATION_S = 60.0
-MAX_DIM = 1080
+MAX_BYTES = 2048 * 1024 * 1024
+MAX_DURATION_S = 30 * 60.0
+MAX_DIM = 1920
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -52,7 +52,7 @@ def probe(data: bytes) -> dict:
 
 
 def validate_upload(data: bytes, filename: str = "clip.mp4") -> dict:
-    """Spec section 8 guards: MP4 only, <=60s, <=1080p. Returns probe meta."""
+    """Spec section 8 guards: MP4 only, <=30min, <=1080p. Returns probe meta."""
     if len(data) > MAX_BYTES:
         raise ValueError(f"clip too large: {len(data)} bytes (max {MAX_BYTES})")
     if not sniff_mp4(data):

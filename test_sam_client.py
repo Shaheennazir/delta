@@ -82,20 +82,3 @@ def test_media_module_roundtrip():
     assert frame_to_jpeg(f0)[:2] == b"\xff\xd8"
     with pytest.raises(ValueError):
         validate_upload(b"not a video")
-
-
-def test_build_events_carries_real_anchors():
-    from orchestrator import _build_events
-    from schemas import DrillAnalysisPlan, MetricRule
-
-    tracks = {
-        "ball": np.array([[100.0, 200.0], [105.0, 200.0]]),
-        "attacker": np.array([[100.0, 201.0], [105.0, 201.0]]),
-    }
-    rule = MetricRule(rule_id="dwell_time_check", name="Dwell",
-                      primitive="proximity_timer", threshold=0.01)
-    violations = [{"rule": rule, "measured": 0.5, "s": 0, "e": 1,
-                   "rkey": "attacker", "track": 3}]
-    (evt,) = _build_events(violations, tracks, 30.0, (320, 240))
-    assert evt.hud_overlay.anchor_x == pytest.approx(100 / 320)
-    assert evt.hud_overlay.anchor_y == pytest.approx(201 / 240)

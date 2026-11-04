@@ -14,7 +14,7 @@ import httpx
 from sam_client import BASE_URL, FILE_TIMEOUT, api_key
 
 log = logging.getLogger("delta.spark")
-SPARK_MODEL = "muse-spark-1.3"
+SPARK_MODEL = "muse-spark-1.3-contributor"
 
 
 def jpeg_data_url(jpeg: bytes) -> str:
@@ -32,8 +32,8 @@ def extract_text(body: dict) -> str:
     raise ValueError("no output_text in Responses body")
 
 
-async def post_unary(payload: dict) -> dict:
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=FILE_TIMEOUT) as c:
+async def post_unary(payload: dict, timeout: float = 120.0) -> dict:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=httpx.Timeout(connect=30.0, read=timeout, write=60.0, pool=30.0)) as c:
         r = await c.post(
             "/responses",
             headers={"Authorization": f"Bearer {api_key()}", "Content-Type": "application/json"},

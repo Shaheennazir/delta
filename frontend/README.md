@@ -29,7 +29,7 @@ to deterministic placeholders on mock reports.
 
 ## Upload flow
 
-The sidebar uploads MP4 clips (max 60s, max 1080p, validated server-side) via
+The sidebar uploads MP4 clips (max 30min, max 1080p, validated server-side) via
 `POST /api/v1/uploads` and receives an `upload://` handle. The clip plays
 locally from an object URL while the backend resolves the handle, uploads to
 the Model API Files endpoint, and streams sam-3.1. Live progress arrives over

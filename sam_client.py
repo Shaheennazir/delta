@@ -39,8 +39,31 @@ class NoApiKey(RuntimeError):
     pass
 
 
+_dotenv_cache: dict | None = None
+
+
+def _dotenv() -> dict:
+    """Values from the repo-root .env (no extra dependency). Env vars win."""
+    global _dotenv_cache
+    if _dotenv_cache is None:
+        vals: dict = {}
+        try:
+            with open(os.path.join(os.path.dirname(__file__), ".env")) as f:
+                for line in f:
+                    s = line.strip()
+                    if s and not s.startswith("#") and "=" in s:
+                        k, v = s.split("=", 1)
+                        vals[k.strip()] = v.strip().strip("\"").strip("'")
+        except OSError:
+            pass
+        _dotenv_cache = vals
+    return _dotenv_cache
+
+
 def api_key() -> str:
-    key = os.getenv("META_API_KEY") or os.getenv("MODEL_API_KEY") or os.getenv("SAM_API_KEY")
+    key = (os.getenv("META_API_KEY") or os.getenv("MODEL_API_KEY") or os.getenv("SAM_API_KEY")
+           or _dotenv().get("META_API_KEY") or _dotenv().get("MODEL_API_KEY")
+           or _dotenv().get("SAM_API_KEY"))
     if not key:
         raise NoApiKey("set META_API_KEY (Model API key from dev.meta.ai)")
     return key
@@ -69,6 +92,22 @@ async def upload_file(data: bytes, filename: str = "clip.mp4") -> str:
     if not FILE_ID_PATTERN.match(file_id):
         raise ValueError(f"Files API returned an invalid handle: {file_id!r}")
     return file_id
+
+
+def local_video_bytes(video_url: str) -> bytes | None:
+    """Bytes already on disk for upload:// handles and local paths; None otherwise."""
+    if FILE_ID_PATTERN.match(video_url) or video_url.startswith(("http://", "https://")):
+        return None
+    from media import UPLOAD_DIR, validate_upload
+
+    if video_url.startswith("upload://"):
+        path = os.path.join(UPLOAD_DIR, os.path.basename(video_url[len("upload://"):]))
+    else:
+        path = video_url
+    with open(path, "rb") as f:
+        data = f.read()
+    validate_upload(data)
+    return data
 
 
 async def resolve_video(video_url: str) -> tuple[str, bytes | None]:
