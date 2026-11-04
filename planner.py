@@ -1,10 +1,12 @@
 """Stage 2 planner: muse-spark-1.3 Frame-0 grounding -> DrillAnalysisPlan (spec 5.2).
 
-Offline-safe: without META_API_KEY returns a deterministic mock plan derived
-from analysis_goals keywords, capped at 4 rules using only the 5 primitives.
+Real path sends Frame 0 (when local bytes exist) + drill text with a
+json_schema response format, validated by DrillAnalysisPlan. Offline or on any
+error it falls back to the deterministic mock plan.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from schemas import (
@@ -14,6 +16,8 @@ from schemas import (
     MetricRule,
     SamConceptPrompt,
 )
+
+log = logging.getLogger("delta.planner")
 
 PLANNER_SYSTEM_PROMPT = """ROLE: Football Computer Vision Architect.
 INPUT:
@@ -78,27 +82,34 @@ def mock_plan(inp: CoachSessionInput) -> DrillAnalysisPlan:
     )
 
 
-async def plan_with_spark(inp: CoachSessionInput) -> DrillAnalysisPlan:
-    """Real muse-spark-1.3 call; falls back to mock offline or on any error."""
-    api_key = os.getenv("META_API_KEY")
-    if not api_key:
+async def plan_with_spark(inp: CoachSessionInput, frame0_jpeg: bytes | None = None) -> DrillAnalysisPlan:
+    """Real muse-spark-1.3 call with Frame-0 vision; falls back to mock."""
+    if not (os.getenv("META_API_KEY") or os.getenv("MODEL_API_KEY") or os.getenv("SAM_API_KEY")):
         return mock_plan(inp)
     try:
-        from openai import AsyncOpenAI
+        from spark import SPARK_MODEL, jpeg_data_url, post_unary, extract_text
 
-        client = AsyncOpenAI(api_key=api_key, base_url="https://api.meta.ai/v1")
-        resp = await client.chat.completions.create(
-            model="muse-spark-1.3",
-            messages=[
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"Drill Setup: {inp.drill_setup}\nObjectives: {inp.drill_title}\n"
-                    f"Analysis Request: {inp.analysis_goals}\n"
-                    "(Frame 0 unavailable in CLI mode; infer generic bib colors.)"
-                )},
-            ],
-            response_format={"type": "json_object"},
-        )
-        return DrillAnalysisPlan.model_validate_json(resp.choices[0].message.content or "{}")
-    except Exception:
+        content: list[dict] = []
+        if frame0_jpeg:
+            content.append({"type": "input_image", "image_url": jpeg_data_url(frame0_jpeg)})
+        content.append({"type": "input_text", "text": (
+            f"Drill Setup: {inp.drill_setup}\nObjectives: {inp.drill_title}\n"
+            f"Analysis Request: {inp.analysis_goals}\n"
+            + ("The attached image is Frame 0 of the drill clip." if frame0_jpeg else
+               "(No frame image available; infer generic bib colors.)")
+        )})
+        body = await post_unary({
+            "model": SPARK_MODEL,
+            "instructions": PLANNER_SYSTEM_PROMPT,
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "text": {"format": {
+                "type": "json_schema", "name": "DrillAnalysisPlan",
+                "schema": DrillAnalysisPlan.model_json_schema(), "strict": True,
+            }},
+        })
+        plan = DrillAnalysisPlan.model_validate_json(extract_text(body))
+        log.info("spark planner ok: %d rules", len(plan.metric_rules))
+        return plan
+    except Exception as e:
+        log.warning("spark planner failed, using mock: %s", e)
         return mock_plan(inp)

@@ -76,6 +76,10 @@ class HudOverlay(BaseModel):
     target_track_id: int = 0
     color: str = "#EF4444"
     label: str = ""
+    # Real foot-contact anchor as media fractions (0..1); overlay renders here.
+    # Absent on mock/demo reports, which use deterministic placeholders.
+    anchor_x: float | None = None
+    anchor_y: float | None = None
 
 
 class CoachingEvent(BaseModel):
@@ -91,6 +95,15 @@ class CoachingEvent(BaseModel):
     coach_feedback: str = ""
 
 
+class VideoMeta(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    width: int = 0
+    height: int = 0
+    fps: float = 30.0
+    duration_s: float = 0.0
+
+
 class SessionReport(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -99,3 +112,4 @@ class SessionReport(BaseModel):
     summary_metrics: dict[str, float] = {}
     events: list[CoachingEvent] = []
     plan: DrillAnalysisPlan | None = None
+    video: VideoMeta | None = None

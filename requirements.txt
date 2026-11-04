@@ -1,0 +1,12 @@
+# Pinned runtime for delta. Install: python -m pip install -r requirements.txt
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.2
+httpx==0.28.1
+numpy==2.5.4
+scipy==1.18.1
+meta-sam-parser==0.1.0
+imageio==2.38.1
+imageio-ffmpeg==0.8.1
+pillow==12.3.0
+python-multipart==0.0.33

@@ -11,3 +11,5 @@
 - `orchestrator.py` → demo_tracks, evaluate_plan (rules->primitives), run_pipeline (+async), SAM stubs, in-memory store.
 - `app.py` → FastAPI: POST/GET /api/v1/sessions, BackgroundTasks (stand-in for Celery+Redis).
 - `test_api.py` → 5 pytest cases: plan caps, pipeline events, API round-trip, 422 sandboxing.
+- `app.py` → + CORS; POST /uploads (MP4 validation), GET /segmentation (raw lanes), GET /stream (SSE).
+- `frontend/` → Next.js 15 dashboard: app/page.tsx (CoachingWorkspace), components (DrillConfigSidebar, InteractiveStage, SamVideoPlayer w/ SDK fallback, TacticalSvgOverlay, ViolationTimelineBar, CoachDiagnosticCards), lib/api.ts + types.ts. `npm run build` clean.

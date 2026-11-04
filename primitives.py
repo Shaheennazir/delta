@@ -173,6 +173,41 @@ def strike_frame(ball_px: np.ndarray, alpha, fps: float = 30.0) -> int:
     return int(np.nanargmax(np.abs(mask_kinematics(ball_px, alpha, fps, "acceleration"))))
 
 
+def kalman_fill_2d(traj_px: np.ndarray, max_gap: int = 4) -> np.ndarray:
+    """Constant-velocity Kalman fill for short NaN gaps (spec section 8).
+
+    Forward filter per axis; gaps of > max_gap frames (or unbordered edges)
+    are left as NaN so primitives never hallucinate long ball drop-outs.
+    """
+    traj = np.asarray(traj_px, dtype=float)
+    T = len(traj)
+    out = traj.copy()
+    valid = np.isfinite(traj).all(axis=1)
+    if valid.all() or not valid.any():
+        return out
+    F = np.array([[1.0, 1.0], [0.0, 1.0]])
+    Q = 1e-2
+    idx = np.nonzero(valid)[0]
+    for a, b in zip(idx[:-1], idx[1:]):
+        gap_len = int(b - a - 1)
+        if not 1 <= gap_len <= max_gap:
+            continue
+        gap = np.arange(a + 1, b)
+        prev = traj[a - 1] if a > 0 and valid[a - 1] else traj[a]
+        for d in range(2):
+            x = np.array([traj[a, d], traj[a, d] - prev[d]])
+            P = np.eye(2)
+            preds = []
+            for _ in gap:
+                x = F @ x
+                P = F @ P @ F.T + Q * np.eye(2)
+                preds.append(float(x[0]))
+            blend = np.linspace(0, 1, gap_len + 2)[1:-1]
+            line = traj[a, d] + (traj[b, d] - traj[a, d]) * blend
+            out[gap, d] = (1 - blend) * np.array(preds) + blend * line
+    return out
+
+
 def mask_pose_axis(
     torso_lean_deg: np.ndarray,
     subj_foot_px: np.ndarray,

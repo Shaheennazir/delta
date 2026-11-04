@@ -1,7 +1,15 @@
-"""Stage 4 reviewer: violation keyframes -> coaching cues (spec 5.3). Offline-safe mock."""
+"""Stage 4 reviewer: violation keyframes -> coaching cues (spec 5.3).
+
+Real path sends each violation's cropped keyframe + metric to muse-spark-1.3
+and returns its 2-sentence intervention verbatim. Offline or on any error it
+falls back to deterministic mock feedback.
+"""
 from __future__ import annotations
 
+import logging
 import os
+
+log = logging.getLogger("delta.reviewer")
 
 REVIEWER_SYSTEM_PROMPT = """ROLE: UEFA Pro License Technical Coach.
 INPUT:
@@ -35,32 +43,40 @@ def mock_feedback(rule_id: str, measured: float, threshold: float,
     )
 
 
-async def review_with_spark(drill_setup: str, violations: list[dict]) -> dict[str, str]:
-    """Real reviewer call; falls back to mock offline or on any error."""
-    api_key = os.getenv("META_API_KEY")
-    if not api_key:
+async def review_with_spark(
+    drill_setup: str,
+    violations: list[dict],
+    crops: dict[str, bytes] | None = None,
+) -> dict[str, str]:
+    """Real reviewer call with keyframe crops; falls back to mock per violation."""
+    has_key = bool(os.getenv("META_API_KEY") or os.getenv("MODEL_API_KEY") or os.getenv("SAM_API_KEY"))
+    if not has_key:
         return {v["key"]: mock_feedback(v["rule_id"], v["measured"], v["threshold"],
                                         v["track_id"], v["t"]) for v in violations}
-    try:
-        from openai import AsyncOpenAI
+    from spark import SPARK_MODEL, jpeg_data_url, post_unary, extract_text
 
-        client = AsyncOpenAI(api_key=api_key, base_url="https://api.meta.ai/v1")
-        out: dict[str, str] = {}
-        for v in violations:
-            resp = await client.chat.completions.create(
-                model="muse-spark-1.3",
-                messages=[
-                    {"role": "system", "content": REVIEWER_SYSTEM_PROMPT},
-                    {"role": "user", "content": (
-                        f"Drill: {drill_setup}\nViolation: rule={v['rule_id']} "
-                        f"track={v['track_id']} t={v['t']:.2f}s "
-                        f"measured={v['measured']:.2f} threshold={v['threshold']:.2f}"
-                    )},
-                ],
-            )
-            out[v["key"]] = (resp.choices[0].message.content or "").strip() or mock_feedback(
+    out: dict[str, str] = {}
+    for v in violations:
+        try:
+            content: list[dict] = []
+            jpeg = (crops or {}).get(v["key"])
+            if jpeg:
+                content.append({"type": "input_image", "image_url": jpeg_data_url(jpeg)})
+            content.append({"type": "input_text", "text": (
+                f"Drill: {drill_setup}\nViolation: rule={v['rule_id']} "
+                f"track={v['track_id']} t={v['t']:.2f}s "
+                f"measured={v['measured']:.2f} threshold={v['threshold']:.2f}"
+            )})
+            body = await post_unary({
+                "model": SPARK_MODEL,
+                "instructions": REVIEWER_SYSTEM_PROMPT,
+                "input": [{"type": "message", "role": "user", "content": content}],
+            })
+            text = extract_text(body).strip()
+            out[v["key"]] = text or mock_feedback(
                 v["rule_id"], v["measured"], v["threshold"], v["track_id"], v["t"])
-        return out
-    except Exception:
-        return {v["key"]: mock_feedback(v["rule_id"], v["measured"], v["threshold"],
-                                        v["track_id"], v["t"]) for v in violations}
+        except Exception as e:
+            log.warning("spark reviewer failed for %s, using mock: %s", v["key"], e)
+            out[v["key"]] = mock_feedback(
+                v["rule_id"], v["measured"], v["threshold"], v["track_id"], v["t"])
+    return out

@@ -65,3 +65,45 @@ def test_evaluate_all_five_primitives():
     assert "proximity_timer" in primitives and "line_intersection" in primitives
     violations, summary = evaluate_plan(plan, demo_tracks(), 30.0)
     assert summary["compliance_score"] < 100.0 and violations
+
+
+def _make_mp4(frames: int = 8, w: int = 160, h: int = 128) -> bytes:
+    import io
+
+    import imageio.v3 as iio
+    import numpy as np
+
+    buf = io.BytesIO()
+    iio.imwrite(buf, np.zeros((frames, h, w, 3), dtype=np.uint8),
+                extension=".mp4", fps=10)
+    return buf.getvalue()
+
+
+def test_upload_rejects_non_video():
+    r = client.post("/api/v1/uploads", files={"file": ("x.txt", b"hello", "text/plain")})
+    assert r.status_code == 422
+
+
+def test_upload_accepts_mp4():
+    r = client.post("/api/v1/uploads",
+                    files={"file": ("clip.mp4", _make_mp4(), "video/mp4")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["video_url"].startswith("upload://")
+    assert body["meta"]["width"] == 160
+
+
+def test_segmentation_missing_before_ready():
+    r = client.post("/api/v1/sessions", json=PAYLOAD)
+    sid = r.json()["session_id"]
+    g = client.get(f"/api/v1/sessions/{sid}/segmentation")
+    assert g.status_code in (200, 404)
+
+
+def test_sse_stream_completes_on_mock_path():
+    r = client.post("/api/v1/sessions", json=PAYLOAD)
+    sid = r.json()["session_id"]
+    g = client.get(f"/api/v1/sessions/{sid}/stream")
+    assert g.status_code == 200
+    assert '"done": true' in g.text
+    assert '"status": "completed"' in g.text
