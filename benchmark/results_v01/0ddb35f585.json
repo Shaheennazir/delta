@@ -1,0 +1,95 @@
+{
+  "video_id": "0ddb35f585",
+  "status": "completed",
+  "answer": "Insufficient video evidence to answer: A woman wearing a blue life jacket lies on a red-and-white kayak, drifting forward on the water, with another woman in a red and yellow life jacket on her right.",
+  "answer_verification": "unknown",
+  "n_frames_indexed": 240,
+  "n_entities": 4,
+  "n_events": 74,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_641e81f6",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "fail",
+        "detail": "74 events reordered by timestamp, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.23"
+      },
+      {
+        "test": "occlusion",
+        "result": "fail",
+        "detail": "2 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 1 implausible; g_29d7793c09 implausible resume over 2.7s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (25.83)"
+      },
+      {
+        "test": "interaction",
+        "result": "fail",
+        "detail": "15 multi-entity event(s), 6 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 6,
+    "skipped": 2,
+    "failed": 3,
+    "total": 11,
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 240,
+        "entities": 2,
+        "events": 74,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "A woman wearing a blue life jacket lies on a red-and-white kayak, drifting forward on the water, with another woman in a red and yellow life jacket on her right.",
+  "gt": {
+    "annotated_frames_with_masks": 272,
+    "masks_total": 1042,
+    "mean_mask_fill_20": 0.0184
+  }
+}

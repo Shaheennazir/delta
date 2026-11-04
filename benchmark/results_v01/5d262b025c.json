@@ -1,0 +1,95 @@
+{
+  "video_id": "5d262b025c",
+  "status": "completed",
+  "answer": "The man in the green shirt stands at the far right of the left-side group facing the helmet-wearing person with a hand up near his mouth during the standoff. A distinct laugh is not clearly discernible in this low-resolution footage.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 120,
+  "n_entities": 2,
+  "n_events": 24,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_f3ea8bb7",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "fail",
+        "detail": "24 events reordered by timestamp, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "pass",
+        "detail": "1 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.5) <= start_t (31.17)"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 6,
+    "skipped": 4,
+    "failed": 1,
+    "total": 11,
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 120,
+        "entities": 1,
+        "events": 24,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The man is standing at the far right of the crowd, looking at the woman in front of him, covering his mouth and laughing.",
+  "gt": {
+    "annotated_frames_with_masks": 188,
+    "masks_total": 1223,
+    "mean_mask_fill_20": 0.0165
+  }
+}

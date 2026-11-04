@@ -1,0 +1,198 @@
+{
+  "n": 15,
+  "completed": 15,
+  "benchmark_totals": {
+    "frame_shuffle": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 4
+    },
+    "frame_deletion": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "audio_removal": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "audio_video_desync": {
+      "pass": 0,
+      "fail": 0,
+      "skip": 15
+    },
+    "similar_objects": {
+      "pass": 7,
+      "fail": 1,
+      "skip": 7
+    },
+    "occlusion": {
+      "pass": 1,
+      "fail": 7,
+      "skip": 7
+    },
+    "rapid_text": {
+      "pass": 5,
+      "fail": 0,
+      "skip": 10
+    },
+    "temporal_reversal": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 4
+    },
+    "interaction": {
+      "pass": 6,
+      "fail": 1,
+      "skip": 8
+    },
+    "counterfactual": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "impossible_question": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "clips": [
+    {
+      "video_id": "5d262b025c",
+      "status": "completed",
+      "n_frames_indexed": 120,
+      "n_entities": 3,
+      "n_events": 46,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "fb8caa28e4",
+      "status": "completed",
+      "n_frames_indexed": 222,
+      "n_entities": 2,
+      "n_events": 35,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "b4192dbf2b",
+      "status": "completed",
+      "n_frames_indexed": 152,
+      "n_entities": 2,
+      "n_events": 28,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "6fb7a04167",
+      "status": "completed",
+      "n_frames_indexed": 252,
+      "n_entities": 4,
+      "n_events": 47,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "24b7b95ca4",
+      "status": "completed",
+      "n_frames_indexed": 164,
+      "n_entities": 8,
+      "n_events": 40,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "6da16715cd",
+      "status": "completed",
+      "n_frames_indexed": 181,
+      "n_entities": 2,
+      "n_events": 51,
+      "ablation_level": 3,
+      "answer_verification": "unknown"
+    },
+    {
+      "video_id": "bda2f20019",
+      "status": "completed",
+      "n_frames_indexed": 179,
+      "n_entities": 2,
+      "n_events": 43,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "18b160d3a7",
+      "status": "completed",
+      "n_frames_indexed": 170,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "0ddb35f585",
+      "status": "completed",
+      "n_frames_indexed": 240,
+      "n_entities": 1,
+      "n_events": 4,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "5d2c735adb",
+      "status": "completed",
+      "n_frames_indexed": 167,
+      "n_entities": 1,
+      "n_events": 17,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "1088228079",
+      "status": "completed",
+      "n_frames_indexed": 129,
+      "n_entities": 0,
+      "n_events": 2,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "235ff86d37",
+      "status": "completed",
+      "n_frames_indexed": 90,
+      "n_entities": 9,
+      "n_events": 80,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "d33c8343bc",
+      "status": "completed",
+      "n_frames_indexed": 206,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "c4638cc87e",
+      "status": "completed",
+      "n_frames_indexed": 87,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "0d0ebe00cc",
+      "status": "completed",
+      "n_frames_indexed": 203,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    }
+  ]
+}

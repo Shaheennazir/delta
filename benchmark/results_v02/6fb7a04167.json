@@ -1,0 +1,187 @@
+{
+  "video_id": "6fb7a04167",
+  "status": "completed",
+  "answer": "A man in a dark jacket with yellow stripes sits at the table holding a clear plastic cup in his right hand while chatting with the men around him. He later lifts the cup to his face near his nose and mouth, while a man in a blue fleece picks up a cup from the table and carries it back to his seat.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 252,
+  "n_entities": 4,
+  "n_events": 47,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_2558e917",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "47 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.03"
+      },
+      {
+        "test": "occlusion",
+        "result": "pass",
+        "detail": "1 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 0 implausible; "
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (9.83) <= start_t (29.17)"
+      },
+      {
+        "test": "interaction",
+        "result": "pass",
+        "detail": "3 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 9,
+    "skipped": 2,
+    "failed": 0,
+    "total": 11,
+    "applicable": 9,
+    "evaluated": 9,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "47 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "max same-frame cross-identity IoU 0.03"
+      },
+      {
+        "test": "occlusion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "1 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 0 implausible; "
+      },
+      {
+        "test": "rapid_text",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (9.83) <= start_t (29.17)"
+      },
+      {
+        "test": "interaction",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "3 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 1,
+      "implausible_resumes": 0,
+      "appearance_switches": 0,
+      "identity_precision_proxy": 1.0,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 47,
+      "events_unsupported": 2,
+      "unsupported_event_rate": 0.0426
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 252,
+        "entities": 4,
+        "events": 47,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The man is sitting in a chair, holding a cup in his right hand, chatting with the people around him, then bringing the cup close to his nose to smell it, then putting it down, pushing a cup on the table toward a man, and finally bringing the cup to his mouth to prepare to drink.",
+  "gt": {
+    "annotated_frames_with_masks": 275,
+    "masks_total": 1019,
+    "mean_mask_fill_20": 0.1442
+  }
+}

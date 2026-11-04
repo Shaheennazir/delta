@@ -7,11 +7,24 @@ through here so a language prior cannot override timestamps.
 from __future__ import annotations
 
 
+def _norm_ts(x) -> float:
+    """Normalised absolute time: ms-rounded float. All ordering and Allen
+    relations go through here so input precision never leaks into decisions."""
+    try:
+        return round(float(x), 3)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _eid(e: dict) -> str:
+    return str(e.get("event_id") or e.get("candidate_id") or "")
+
+
 def relation(a_start: float, a_end: float, b_start: float, b_end: float,
              eps: float = 1e-6) -> str:
-    """One of Allen's 13 relations of A to B."""
-    a_start, a_end = float(a_start), float(a_end)
-    b_start, b_end = float(b_start), float(b_end)
+    """One of Allen's 13 relations of A to B (timestamps normalised first)."""
+    a_start, a_end = _norm_ts(a_start), _norm_ts(a_end)
+    b_start, b_end = _norm_ts(b_start), _norm_ts(b_end)
     if a_end < b_start - eps:
         return "before"
     if abs(a_start - b_start) <= eps and abs(a_end - b_end) <= eps:
@@ -58,26 +71,33 @@ def duration(start_t: float, end_t: float) -> float:
 
 
 def order_events(events: list[dict]) -> list[dict]:
-    """Sort by (start_t, end_t); stable, deterministic."""
-    return sorted(events, key=lambda e: (float(e.get("start_t", 0)), float(e.get("end_t", 0))))
+    """Sort by (normalised start, normalised end, stable id). Pure function of
+    timestamps + ids: never input position. The id tie-break makes every
+    permutation of the same timestamped events order identically."""
+    return sorted(events, key=lambda e: (_norm_ts(e.get("start_t", 0)),
+                                         _norm_ts(e.get("end_t", 0)), _eid(e)))
 
 
 def find_before(events: list[dict], t: float) -> list[dict]:
-    return [e for e in order_events(events) if float(e.get("end_t", 0)) <= float(t)]
+    t = _norm_ts(t)
+    return [e for e in order_events(events) if _norm_ts(e.get("end_t", 0)) <= t]
 
 
 def find_after(events: list[dict], t: float) -> list[dict]:
-    return [e for e in order_events(events) if float(e.get("start_t", 0)) >= float(t)]
+    t = _norm_ts(t)
+    return [e for e in order_events(events) if _norm_ts(e.get("start_t", 0)) >= t]
 
 
 def find_between(events: list[dict], a_end: float, b_start: float) -> list[dict]:
+    a_end, b_start = _norm_ts(a_end), _norm_ts(b_start)
     return [e for e in order_events(events)
-            if float(e.get("start_t", 0)) >= float(a_end) and float(e.get("end_t", 0)) <= float(b_start)]
+            if _norm_ts(e.get("start_t", 0)) >= a_end and _norm_ts(e.get("end_t", 0)) <= b_start]
 
 
 def find_containing(events: list[dict], t: float) -> list[dict]:
+    t = _norm_ts(t)
     return [e for e in events
-            if float(e.get("start_t", 0)) <= float(t) <= float(e.get("end_t", 0))]
+            if _norm_ts(e.get("start_t", 0)) <= t <= _norm_ts(e.get("end_t", 0))]
 
 
 def contradictions(events: list[dict], duration: float = 0.0) -> list[str]:

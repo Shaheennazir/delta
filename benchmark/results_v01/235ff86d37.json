@@ -1,0 +1,95 @@
+{
+  "video_id": "235ff86d37",
+  "status": "completed",
+  "answer": "A bird lands on the roof of the green feeder and then hops down to the tray to feed. Later another bird is seen standing on the roof.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 90,
+  "n_entities": 8,
+  "n_events": 44,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_419a3859",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "fail",
+        "detail": "44 events reordered by timestamp, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (39.0)"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 5,
+    "skipped": 5,
+    "failed": 1,
+    "total": 11,
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 90,
+        "entities": 1,
+        "events": 44,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The bird flies onto the roof of the birdhouse, then hops down to eat. The scene switches to another bird standing on the roof.",
+  "gt": {
+    "annotated_frames_with_masks": 235,
+    "masks_total": 682,
+    "mean_mask_fill_20": 0.0164
+  }
+}

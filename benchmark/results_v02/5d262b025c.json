@@ -1,0 +1,187 @@
+{
+  "video_id": "5d262b025c",
+  "status": "completed",
+  "answer": "Yes - a man in a green shirt stands at the far right of the left-side crowd watching the person in front of him with his hand to his mouth, appearing to laugh while the group aims toy blasters.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 120,
+  "n_entities": 3,
+  "n_events": 46,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_2896f0d9",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "46 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.21"
+      },
+      {
+        "test": "occlusion",
+        "result": "fail",
+        "detail": "6 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 1 implausible; g_04edd185f4 implausible resume over 4.0s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "pass",
+        "detail": "1 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (0.33)"
+      },
+      {
+        "test": "interaction",
+        "result": "pass",
+        "detail": "4 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 9,
+    "skipped": 1,
+    "failed": 1,
+    "total": 11,
+    "applicable": 10,
+    "evaluated": 10,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "46 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "max same-frame cross-identity IoU 0.21"
+      },
+      {
+        "test": "occlusion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "fail",
+        "reason": "6 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 1 implausible; g_04edd185f4 implausible resume over 4.0s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "1 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (0.0) <= start_t (0.33)"
+      },
+      {
+        "test": "interaction",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "4 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 6,
+      "implausible_resumes": 1,
+      "appearance_switches": 0,
+      "identity_precision_proxy": 0.8333,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 46,
+      "events_unsupported": 4,
+      "unsupported_event_rate": 0.087
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 120,
+        "entities": 3,
+        "events": 46,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The man is standing at the far right of the crowd, looking at the woman in front of him, covering his mouth and laughing.",
+  "gt": {
+    "annotated_frames_with_masks": 188,
+    "masks_total": 1223,
+    "mean_mask_fill_20": 0.0165
+  }
+}

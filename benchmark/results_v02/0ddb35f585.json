@@ -1,0 +1,187 @@
+{
+  "video_id": "0ddb35f585",
+  "status": "completed",
+  "answer": "No kayak or drifting is shown. A rider in a blue life vest lies prone on a red-and-white inflatable tow tube being pulled fast across the water, with a second rider beside her and a third rider on a separate yellow-and-black tube to the right.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 240,
+  "n_entities": 1,
+  "n_events": 4,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_6d2f7fde",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "4 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "fail",
+        "detail": "2 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 1 implausible; g_04edd185f4 implausible resume over 1.8s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (25.83)"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 6,
+    "skipped": 4,
+    "failed": 1,
+    "total": 11,
+    "applicable": 7,
+    "evaluated": 7,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "4 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "fail",
+        "reason": "2 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 1 implausible; g_04edd185f4 implausible resume over 1.8s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (0.0) <= start_t (25.83)"
+      },
+      {
+        "test": "interaction",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 2,
+      "implausible_resumes": 1,
+      "appearance_switches": 0,
+      "identity_precision_proxy": 0.5,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 4,
+      "events_unsupported": 0,
+      "unsupported_event_rate": 0.0
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 240,
+        "entities": 1,
+        "events": 4,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "A woman wearing a blue life jacket lies on a red-and-white kayak, drifting forward on the water, with another woman in a red and yellow life jacket on her right.",
+  "gt": {
+    "annotated_frames_with_masks": 272,
+    "masks_total": 1042,
+    "mean_mask_fill_20": 0.0184
+  }
+}

@@ -69,6 +69,10 @@ def _norm(s: str) -> str:
     return " ".join(s.lower().split())
 
 
+# Similar text merges only inside this window; rapid text changes stay separate.
+OCR_GROUP_WINDOW_S = 2.0
+
+
 async def run_ocr(frame_rows: list[dict], max_crops: int = 5,
                 timeout_per_image: float = 90.0) -> list[dict]:
     """OCR the sharpest keyframes; vote across frames. Real passes only.
@@ -103,12 +107,19 @@ async def run_ocr(frame_rows: list[dict], max_crops: int = 5,
                 "text": text, "confidence": round(conf, 3)}
 
     raw = [x for x in await asyncio.gather(*(one(r) for r in picked)) if x]
-    # Vote: group near-duplicates (>=0.8 similarity), keep best, merge times.
+    # Vote: group near-duplicates (>=0.8 similarity) only within a bounded
+    # temporal window. Output keeps the best-confidence row's own t +
+    # frame_index so every cited observation points at the frame where that
+    # text was actually detected (provenance, not merged time).
     groups: list[list[dict]] = []
-    for item in sorted(raw, key=lambda r: -r["confidence"]):
+    for item in sorted(raw, key=lambda r: (float(r["t"]), -float(r["confidence"]))):
         placed = False
         for g in groups:
-            if difflib.SequenceMatcher(None, _norm(g[0]["text"]), _norm(item["text"])).ratio() >= 0.8:
+            best = max(g, key=lambda r: r["confidence"])
+            span = max([float(m["t"]) for m in g] + [float(item["t"])]) - \
+                min([float(m["t"]) for m in g] + [float(item["t"])])
+            if span <= OCR_GROUP_WINDOW_S and difflib.SequenceMatcher(
+                    None, _norm(best["text"]), _norm(item["text"])).ratio() >= 0.8:
                 g.append(item)
                 placed = True
                 break
@@ -119,6 +130,6 @@ async def run_ocr(frame_rows: list[dict], max_crops: int = 5,
         best = max(g, key=lambda r: r["confidence"])
         votes = len(g)
         conf = min(0.99, best["confidence"] + 0.05 * (votes - 1))
-        out.append({"t": min(r["t"] for r in g), "frame_index": best["frame_index"],
+        out.append({"t": float(best["t"]), "frame_index": int(best["frame_index"]),
                     "text": best["text"], "confidence": round(conf, 3)})
     return sorted(out, key=lambda r: r["t"])

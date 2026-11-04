@@ -153,12 +153,27 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
             return i, c, None, str(e)[:200]
 
     results = await asyncio.gather(*(one(i, c) for i, c in enumerate(concepts)))
+    n_streams = len(concepts)
+    n_ok = sum(1 for _, _, t, e in results if t and t.get("objects"))
+    n_objects = sum(len((t or {}).get("objects") or {}) for _, _, t, _e in results)
+    n_boxes = sum(len((o or {}).get("boxes") or {})
+                  for _, _, t, _e in results for o in ((t or {}).get("objects") or {}).values())
     cands: list[dict] = []
     for i, c, tracks, _err in results:
         if tracks and tracks.get("objects"):
             cands.extend(_objects_to_candidates(tracks, fps, c, i))
-    cands = [c for c in _merge(cands) if c["observations"]]
+    n_pre_merge, n_empty_dropped = len(cands), 0
+    merged = _merge(cands)
+    n_merged_away = n_pre_merge - len(merged)
+    cands = [c for c in merged if c["observations"]]
+    n_empty_dropped = len(merged) - len(cands)
     if not cands:
+        _coverage_log(session_id, {"concepts": [c.get("prompt", "") for c in concepts],
+                                   "streams_launched": n_streams, "streams_ok": n_ok,
+                                   "sam_objects": n_objects, "sam_boxes": n_boxes,
+                                   "candidates": n_pre_merge, "merged_away": n_merged_away,
+                                   "empty_dropped": n_empty_dropped,
+                                   "entities": 0, "observations": 0})
         return entities, all_obs
 
     identity.assign(cands, frame_rows or [], media_wh, session_id)
@@ -172,7 +187,37 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
         })
         all_obs.extend(c["observations"])
     all_obs.sort(key=lambda o: (o["t"], o["entity_id"]))
+    _coverage_log(session_id, {"concepts": [c.get("prompt", "") for c in concepts],
+                               "streams_launched": n_streams, "streams_ok": n_ok,
+                               "sam_objects": n_objects, "sam_boxes": n_boxes,
+                               "candidates": n_pre_merge, "merged_away": n_merged_away,
+                               "empty_dropped": n_empty_dropped,
+                               "entities": len(entities), "observations": len(all_obs)})
     return entities, all_obs
+
+
+def _coverage_log(session_id: str, diag: dict) -> None:
+    """Honest coverage accounting: why zero-entity clips have zero entities.
+
+    Thresholds are NOT lowered here — that would trade false negatives for
+    false tracks/identity switches (P1). The trace line records concepts,
+    streams, SAM status, masks/tracks, and filter/merge/deletion counts so a
+    0-entity result is diagnosable instead of silent.
+    """
+    msg = ("coverage concepts=%d streams=%d/%d ok objects=%d boxes=%d "
+           "cands=%d merged_away=%d empty_dropped=%d -> entities=%d obs=%d" % (
+               len(diag.get("concepts", [])), diag.get("streams_ok", 0),
+               diag.get("streams_launched", 0), diag.get("sam_objects", 0),
+               diag.get("sam_boxes", 0), diag.get("candidates", 0),
+               diag.get("merged_away", 0), diag.get("empty_dropped", 0),
+               diag.get("entities", 0), diag.get("observations", 0)))
+    log.info("entity %s", msg)
+    if session_id:
+        try:
+            import store
+            store.append_trace(session_id, "segment_track_sam", "received", msg[:300])
+        except Exception:
+            pass
 
 
 def _same_track(a: list[dict], b: list[dict], iou_thr: float = 0.7) -> bool:

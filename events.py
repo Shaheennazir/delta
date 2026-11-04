@@ -116,12 +116,15 @@ def _pair_metric(a: list[float], b: list[float]) -> tuple[float, float]:
 def build_interactions(entities: list[dict], observations: list[dict]) -> list[dict]:
     """Pairwise contact/proximity runs from co-present boxes. No model guess.
 
-    For each entity pair, per-frame geometry classifies contact (overlap or
-    centres within 0.6 diag) vs near (within 1.2 diag). Consecutive
+    Grounding contract: an interaction is emitted only when both entities have
+    temporally overlapping observations in the SAME frame(s) with measured
+    close geometry over >=2 co-present frames. Contact requires actual box
+    overlap (IoU); proximity alone is "near", never contact. Consecutive
     qualifying frames linked across <=1s gaps become one interaction with
-    exact start/end from the observations. Contact wins over near.
+    exact start/end from the observations. A run with a single supporting
+    frame is rejected: state-change claims need before-and-after evidence.
     """
-    ids = [e["entity_id"] for e in entities]
+    ids = list(dict.fromkeys(e["entity_id"] for e in entities))
     if len(ids) < 2:
         return []
     conf_of = {e["entity_id"]: float(e.get("confidence", 0.5)) for e in entities}
@@ -134,6 +137,8 @@ def build_interactions(entities: list[dict], observations: list[dict]) -> list[d
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             a_id, b_id = ids[i], ids[j]
+            if a_id == b_id:
+                continue  # duplicate registry rows are never a pair
             seq: list[dict] = []  # co-present frames with geometry
             for fi in sorted(by_frame):
                 row = by_frame[fi]
@@ -141,7 +146,8 @@ def build_interactions(entities: list[dict], observations: list[dict]) -> list[d
                     continue
                 oa, ob = row[a_id], row[b_id]
                 iou, dist = _pair_metric(oa["bbox"], ob["bbox"])
-                kind = ("contact" if (iou > CONTACT_IOU or dist < CONTACT_DIST)
+                # Contact = measured overlap. Proximity alone is near.
+                kind = ("contact" if iou > CONTACT_IOU
                         else "near" if dist < NEAR_DIST else "")
                 if kind:
                     seq.append({"t": float(oa["t"] + ob["t"]) / 2.0, "fi": fi,
@@ -154,6 +160,8 @@ def build_interactions(entities: list[dict], observations: list[dict]) -> list[d
                 else:
                     runs.append([s])
             for run in runs:
+                if len(run) < 2:
+                    continue  # need before-and-after co-present evidence
                 if run[-1]["t"] - run[0]["t"] < MIN_INTERACT_S and len(run) < 2:
                     continue
                 kind = "contact" if any(s["kind"] == "contact" for s in run) else "near"
@@ -264,8 +272,9 @@ def build_candidates(entities: list[dict], observations: list[dict],
 
 def state_timeline(events: list[dict]) -> list[dict]:
     """Per-entity typed state intervals, merged when contiguous and unchanged."""
+    import temporal as _t
     rows: list[dict] = []
-    for e in sorted(events, key=lambda x: float(x.get("start_t", 0))):
+    for e in _t.order_events(events):
         for eid in e.get("entity_ids") or []:
             for key, value in (e.get("state_after") or {}).items():
                 rows.append({"entity_id": eid, "key": key, "value": value,

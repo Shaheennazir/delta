@@ -1,0 +1,187 @@
+{
+  "video_id": "24b7b95ca4",
+  "status": "completed",
+  "answer": "A woman on the right side of the hallway crowd is first visible with only her head showing while she chats, and as the camera moves closer she looks toward the lens, crosses her arms in front of her chest, and steps out of frame.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 164,
+  "n_entities": 8,
+  "n_events": 40,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_f175ea4d",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "40 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.57"
+      },
+      {
+        "test": "occlusion",
+        "result": "fail",
+        "detail": "6 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 3 implausible; g_b70a3b4295 implausible resume over 2.7s; g_b70a3b4295 implausible resume over 4.3s; g_72243761e7 implausible resume over 1.7s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (21.0) <= start_t (23.83)"
+      },
+      {
+        "test": "interaction",
+        "result": "pass",
+        "detail": "12 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 8,
+    "skipped": 2,
+    "failed": 1,
+    "total": 11,
+    "applicable": 9,
+    "evaluated": 9,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "40 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "max same-frame cross-identity IoU 0.57"
+      },
+      {
+        "test": "occlusion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "fail",
+        "reason": "6 gap(s) >1.5s, 0 collision(s), 0 appearance switch(es), 3 implausible; g_b70a3b4295 implausible resume over 2.7s; g_b70a3b4295 implausible resume over 4.3s; g_72243761e7 implausible resume over 1.7s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (21.0) <= start_t (23.83)"
+      },
+      {
+        "test": "interaction",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "12 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 6,
+      "implausible_resumes": 3,
+      "appearance_switches": 0,
+      "identity_precision_proxy": 0.5,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 40,
+      "events_unsupported": 4,
+      "unsupported_event_rate": 0.1
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 164,
+        "entities": 8,
+        "events": 40,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The woman, standing on the right side of the crowd, is chatting with only her head visible. Later, as the camera moves, she notices it, crosses her arms in front of her chest, and leaves the frame.",
+  "gt": {
+    "annotated_frames_with_masks": 226,
+    "masks_total": 750,
+    "mean_mask_fill_20": 0.0189
+  }
+}

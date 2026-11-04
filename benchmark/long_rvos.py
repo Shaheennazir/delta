@@ -20,7 +20,7 @@ BENCH = os.path.join(REPO, "benchmark")
 CACHE = os.path.join(BENCH, "cache")
 SRC = os.path.join(BENCH, "clips_src")
 CLIPS = os.path.join(BENCH, "clips")
-RESULTS = os.path.join(BENCH, "results")
+RESULTS = os.environ.get("BENCH_RESULTS_DIR", os.path.join(BENCH, "results"))
 SEL_PATH = os.path.join(BENCH, "selection.json")
 
 REPO_ID = "iSEE-Laboratory/Long-RVOS"

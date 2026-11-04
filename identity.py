@@ -24,6 +24,10 @@ MATCH_THRESHOLD = 0.86
 # lighting/pose shifts across an occlusion, but still well above chance.
 BRIDGE_APPEARANCE_THR = 0.75
 BRIDGE_MAX_GAP_S = 5.0
+# Long gaps need stronger appearance evidence; scene-cut crossings need more.
+LONG_GAP_S = 2.5
+LONG_GAP_APPEARANCE_THR = 0.85
+CUT_APPEARANCE_THR = 0.90
 
 
 def descriptor(path: str, bbox: list[float], media_w: float = 0.0) -> list[float]:
@@ -143,7 +147,34 @@ def assign(candidates: list[dict], frame_rows: list[dict], media_wh: tuple,
             c["identity_score"] = 0.0
         c["entity_id"] = gid
         c["global_id"] = gid
-    candidates = stitch_tracklets(candidates)
+    # Conflicting simultaneous tracks must never share one identity: if two
+    # candidates overlap in time and matched the same gallery id, only the
+    # strongest keeps it; the rest fork to unknown ids rather than forcing.
+    def _tspan(c: dict) -> tuple[float, float]:
+        ts = [float(o["t"]) for o in c.get("observations", [])]
+        return (min(ts), max(ts)) if ts else (0.0, 0.0)
+
+    def _overlaps(a: dict, b: dict) -> bool:
+        sa, ea = _tspan(a)
+        sb, eb = _tspan(b)
+        fa = {int(o.get("frame_index", -1)) for o in a.get("observations", [])}
+        fb = {int(o.get("frame_index", -1)) for o in b.get("observations", [])}
+        if fa & fb:
+            return True
+        return max(sa, sb) <= min(ea, eb) + 1e-6
+
+    seen_gid: dict[str, dict] = {}
+    for c in sorted(candidates, key=lambda x: -float(x.get("identity_score", 0.0))):
+        gid = c.get("global_id", "")
+        if gid in seen_gid and _overlaps(seen_gid[gid], c):
+            gid = f"g_{uuid.uuid4().hex[:10]}"
+            c["identity_score"] = 0.0
+            c["entity_id"] = gid
+            c["global_id"] = gid
+        seen_gid.setdefault(c.get("global_id", ""), c)
+    cuts = [float(r.get("t", 0)) for r in (frame_rows or [])
+            if r.get("scene_cut") or r.get("tier") == "transition"]
+    candidates = stitch_tracklets(candidates, scene_cut_times=cuts or None)
     for c in candidates:
         for o in c["observations"]:
             o["entity_id"] = c["global_id"]
@@ -197,22 +228,89 @@ def resume_plausible(before: list[float], after: list[float], dt: float,
 
 def stitch_tracklets(candidates: list[dict],
                      max_gap: float = BRIDGE_MAX_GAP_S,
-                     appearance_thr: float = BRIDGE_APPEARANCE_THR) -> list[dict]:
+                     appearance_thr: float = BRIDGE_APPEARANCE_THR,
+                     scene_cut_times: list[float] | None = None) -> list[dict]:
     """Merge fragmented tracklets of one physical object across occlusion gaps.
 
-    Two-stage, deterministic: (1) same global_id from the gallery always
-    merges; (2) same-kind, temporally disjoint tracklets merge when appearance
-    matches (>=thr when both descriptors exist) AND the resume box is
-    spatially reachable. Without any descriptor, spatial continuity alone
-    merges only near-overlapping resumes (IoU > 0.1) to avoid identity theft.
+    Constrained association: a merge is allowed only when ALL hold —
+    temporally disjoint (no shared frame, no time overlap), spatially
+    reachable resume, compatible appearance, no conflicting simultaneous
+    track, no scene-cut crossing without strong independent evidence, and no
+    excessively long gap without strong evidence. Otherwise the fragment keeps
+    its own (unknown) identity. Deterministic: earliest-first, greedy.
     """
     for c in candidates:
         c["observations"] = sorted(c.get("observations", []), key=lambda o: float(o["t"]))
-    # Stage 1: gallery already gave the same id to two fragments -> one entity.
+
+    def _span(c: dict) -> tuple[float, float]:
+        ts = [float(o["t"]) for o in c.get("observations", [])]
+        return (min(ts), max(ts)) if ts else (0.0, 0.0)
+
+    def _frames(c: dict) -> set[int]:
+        return {int(o.get("frame_index", -1)) for o in c.get("observations", [])}
+
+    def _overlaps(a: dict, b: dict) -> bool:
+        sa, ea = _span(a)
+        sb, eb = _span(b)
+        if _frames(a) & _frames(b):
+            return True
+        return max(sa, sb) <= min(ea, eb) + 1e-6
+
+    def _cut_in_gap(pe: float, cs: float) -> bool:
+        if not scene_cut_times:
+            return False
+        return any(pe < float(t) <= cs for t in scene_cut_times)
+
+    def _would_conflict(prev: dict, cur: dict) -> bool:
+        # One identity in two places at once: merged track would hold two
+        # different boxes on the same frame.
+        pf = {int(o.get("frame_index", -1)): tuple(o["bbox"])
+              for o in prev.get("observations", [])}
+        for o in cur.get("observations", []):
+            fi = int(o.get("frame_index", -1))
+            if fi in pf and tuple(o["bbox"]) != pf[fi]:
+                return True
+        return False
+
+    def _can_merge(prev: dict, cur: dict) -> bool:
+        if (prev.get("kind", "object") or "object") != (cur.get("kind", "object") or "object"):
+            return False
+        if _overlaps(prev, cur):
+            return False  # conflicting simultaneous tracks: never the same identity
+        if _would_conflict(prev, cur):
+            return False
+        pe = float(prev["observations"][-1]["t"])
+        cs = float(cur["observations"][0]["t"])
+        gap = cs - pe
+        if gap <= 0 or gap > max_gap:
+            return False  # excessively long gap without supporting evidence
+        da, db = prev.get("_desc") or [], cur.get("_desc") or []
+        app = cosine(da, db) if (da and db) else 0.0
+        spatial = resume_plausible(prev["observations"][-1]["bbox"],
+                                   cur["observations"][0]["bbox"], gap, max_gap)
+        if not spatial:
+            return False  # impossible displacement
+        iou = _box_iou(prev["observations"][-1]["bbox"], cur["observations"][0]["bbox"])
+        thr = appearance_thr
+        if gap > LONG_GAP_S:
+            thr = max(thr, LONG_GAP_APPEARANCE_THR)
+        if _cut_in_gap(pe, cs):
+            thr = max(thr, CUT_APPEARANCE_THR)
+            if iou <= 0.1 and not (da and db and app >= thr):
+                return False  # scene-cut boundary without independent evidence
+        if da and db:
+            if app < thr:
+                return False  # incompatible appearance
+            return True
+        return iou > 0.1  # descriptorless: near-overlap only
+
+    # Stage 1: same global_id merges ONLY when continuity also allows it.
+    # Gallery agreement is necessary but not sufficient — this closes the
+    # implausible-resume path where lookalikes shared one id across a jump.
     by_gid: dict[str, dict] = {}
     for c in candidates:
         gid = c.get("global_id", "")
-        if gid in by_gid:
+        if gid in by_gid and _can_merge(by_gid[gid], c):
             prev = by_gid[gid]
             seen = {(o.get("frame_index"), tuple(o["bbox"])) for o in prev["observations"]}
             for o in c["observations"]:
@@ -221,6 +319,12 @@ def stitch_tracklets(candidates: list[dict],
             prev["observations"].sort(key=lambda o: float(o["t"]))
             prev["confidence"] = max(float(prev.get("confidence", 0)),
                                      float(c.get("confidence", 0)))
+        elif gid in by_gid:
+            # Same gallery id but continuity rejected: fork an unknown identity
+            # rather than forcing a bad match.
+            c["global_id"] = f"g_{uuid.uuid4().hex[:10]}"
+            c["identity_score"] = 0.0
+            by_gid[c["global_id"]] = c
         else:
             by_gid[gid] = c
     merged = list(by_gid.values())
@@ -233,26 +337,7 @@ def stitch_tracklets(candidates: list[dict],
             continue
         best = None
         for prev in out:
-            if (prev.get("kind", "object") or "object") != (cur.get("kind", "object") or "object"):
-                continue
-            if prev["global_id"] == cur["global_id"]:
-                best = prev
-                break
-            pe = float(prev["observations"][-1]["t"])
-            cs = float(cur["observations"][0]["t"])
-            gap = cs - pe
-            if gap <= 0 or gap > max_gap:
-                continue
-            da, db = prev.get("_desc") or [], cur.get("_desc") or []
-            app = cosine(da, db) if (da and db) else 0.0
-            spatial = resume_plausible(prev["observations"][-1]["bbox"],
-                                       cur["observations"][0]["bbox"], gap, max_gap)
-            iou = _box_iou(prev["observations"][-1]["bbox"], cur["observations"][0]["bbox"])
-            if da and db:
-                ok = app >= appearance_thr and spatial
-            else:
-                ok = iou > 0.1 and spatial
-            if ok:
+            if _can_merge(prev, cur):
                 best = prev
                 break
         if best is None:

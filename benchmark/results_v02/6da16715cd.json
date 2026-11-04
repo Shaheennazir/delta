@@ -1,0 +1,187 @@
+{
+  "video_id": "6da16715cd",
+  "status": "completed",
+  "answer": "Insufficient video evidence to answer: A shirtlessman wearing a camouflage hat is sitting on a chair, waving a fan in his hand, adjusting a black short-sleeve shirt, and then pointing at a man on the field while laughing heartily.",
+  "answer_verification": "unknown",
+  "n_frames_indexed": 181,
+  "n_entities": 2,
+  "n_events": 51,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_03c2fd38",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "51 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "pass",
+        "detail": "max same-frame cross-identity IoU 0.56"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "pass",
+        "detail": "3 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (0.0) <= start_t (3.67)"
+      },
+      {
+        "test": "interaction",
+        "result": "pass",
+        "detail": "1 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 9,
+    "skipped": 2,
+    "failed": 0,
+    "total": 11,
+    "applicable": 9,
+    "evaluated": 9,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "51 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "max same-frame cross-identity IoU 0.56"
+      },
+      {
+        "test": "occlusion",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "3 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (0.0) <= start_t (3.67)"
+      },
+      {
+        "test": "interaction",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "1 multi-entity event(s), 0 hallucinated, 0 missed"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 0,
+      "implausible_resumes": 0,
+      "appearance_switches": 0,
+      "identity_precision_proxy": null,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 51,
+      "events_unsupported": 1,
+      "unsupported_event_rate": 0.0196
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 181,
+        "entities": 2,
+        "events": 51,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "A shirtlessman wearing a camouflage hat is sitting on a chair, waving a fan in his hand, adjusting a black short-sleeve shirt, and then pointing at a man on the field while laughing heartily.",
+  "gt": {
+    "annotated_frames_with_masks": 235,
+    "masks_total": 1203,
+    "mean_mask_fill_20": 0.0505
+  }
+}

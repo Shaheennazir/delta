@@ -1,0 +1,269 @@
+[1/15] 5d262b025c running…
+[1/15] 5d262b025c -> completed
+[2/15] fb8caa28e4 running…
+[2/15] fb8caa28e4 -> completed
+[3/15] b4192dbf2b running…
+[3/15] b4192dbf2b -> completed
+[4/15] 6fb7a04167 running…
+ResponsesStreamAbortedError exception in shielded future
+future: <Future finished exception=ResponsesStreamAbortedError('The parsed response stream was abandoned before completion.')>
+Traceback (most recent call last):
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 235, in _drain_final
+    done, event = await self._read_source()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 579, in _read_source
+    raise interrupted.result()
+meta_sam_parser._errors.ResponsesStreamAbortedError: The parsed response stream was abandoned before completion.
+SAM stream failed for 'the clear cup on the table': 
+[4/15] 6fb7a04167 -> completed
+[5/15] 24b7b95ca4 running…
+frame count mismatch: wanted 165, decoded 164
+[5/15] 24b7b95ca4 -> completed
+[6/15] 6da16715cd running…
+[6/15] 6da16715cd -> completed
+[7/15] bda2f20019 running…
+[7/15] bda2f20019 -> completed
+[8/15] 18b160d3a7 running…
+frame count mismatch: wanted 171, decoded 170
+SAM stream failed for 'the woman in black on the right': The Responses event source failed during next.
+[8/15] 18b160d3a7 -> completed
+[9/15] 0ddb35f585 running…
+frame count mismatch: wanted 241, decoded 240
+[9/15] 0ddb35f585 -> completed
+[10/15] 5d2c735adb running…
+[10/15] 5d2c735adb -> completed
+[11/15] 1088228079 running…
+[11/15] 1088228079 -> completed
+[12/15] 235ff86d37 running…
+[12/15] 235ff86d37 -> completed
+[13/15] d33c8343bc running…
+SAM stream failed for 'the white cream pie with chocolate chips': The Responses event source failed during next.
+SAM stream failed for 'the pie with yellow jelly and cream border': The Responses event source failed during next.
+SAM stream failed for 'the strawberry pie with whipped cream border': The Responses event source failed during next.
+[13/15] d33c8343bc -> completed
+[14/15] c4638cc87e running…
+SAM stream failed for 'the woman in black graphic t-shirt': The Responses event source failed during next.
+SAM stream failed for 'the woman in black tank top': The Responses event source failed during next.
+SAM stream failed for 'the man in white sleeveless shirt': The Responses event source failed during next.
+[14/15] c4638cc87e -> completed
+[15/15] 0d0ebe00cc running…
+frame count mismatch: wanted 204, decoded 203
+ResponsesStreamAbortedError exception in shielded future
+future: <Future finished exception=ResponsesStreamAbortedError('The parsed response stream was abandoned before completion.')>
+Traceback (most recent call last):
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 235, in _drain_final
+    done, event = await self._read_source()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 579, in _read_source
+    raise interrupted.result()
+meta_sam_parser._errors.ResponsesStreamAbortedError: The parsed response stream was abandoned before completion.
+ResponsesStreamAbortedError exception in shielded future
+future: <Future finished exception=ResponsesStreamAbortedError('The parsed response stream was abandoned before completion.')>
+Traceback (most recent call last):
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 235, in _drain_final
+    done, event = await self._read_source()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/shaheennazir/.local/share/mise/installs/python/3.14.2/lib/python3.14/site-packages/meta_sam_parser/_stream.py", line 579, in _read_source
+    raise interrupted.result()
+meta_sam_parser._errors.ResponsesStreamAbortedError: The parsed response stream was abandoned before completion.
+SAM stream failed for 'the tan dog with collar': 
+SAM stream failed for 'the white dog in background': 
+[15/15] 0d0ebe00cc -> completed
+{
+  "n": 15,
+  "completed": 15,
+  "benchmark_totals": {
+    "frame_shuffle": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 4
+    },
+    "frame_deletion": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "audio_removal": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "audio_video_desync": {
+      "pass": 0,
+      "fail": 0,
+      "skip": 15
+    },
+    "similar_objects": {
+      "pass": 7,
+      "fail": 1,
+      "skip": 7
+    },
+    "occlusion": {
+      "pass": 1,
+      "fail": 7,
+      "skip": 7
+    },
+    "rapid_text": {
+      "pass": 5,
+      "fail": 0,
+      "skip": 10
+    },
+    "temporal_reversal": {
+      "pass": 11,
+      "fail": 0,
+      "skip": 4
+    },
+    "interaction": {
+      "pass": 6,
+      "fail": 1,
+      "skip": 8
+    },
+    "counterfactual": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    },
+    "impossible_question": {
+      "pass": 15,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "clips": [
+    {
+      "video_id": "5d262b025c",
+      "status": "completed",
+      "n_frames_indexed": 120,
+      "n_entities": 3,
+      "n_events": 46,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "fb8caa28e4",
+      "status": "completed",
+      "n_frames_indexed": 222,
+      "n_entities": 2,
+      "n_events": 35,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "b4192dbf2b",
+      "status": "completed",
+      "n_frames_indexed": 152,
+      "n_entities": 2,
+      "n_events": 28,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "6fb7a04167",
+      "status": "completed",
+      "n_frames_indexed": 252,
+      "n_entities": 4,
+      "n_events": 47,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "24b7b95ca4",
+      "status": "completed",
+      "n_frames_indexed": 164,
+      "n_entities": 8,
+      "n_events": 40,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "6da16715cd",
+      "status": "completed",
+      "n_frames_indexed": 181,
+      "n_entities": 2,
+      "n_events": 51,
+      "ablation_level": 3,
+      "answer_verification": "unknown"
+    },
+    {
+      "video_id": "bda2f20019",
+      "status": "completed",
+      "n_frames_indexed": 179,
+      "n_entities": 2,
+      "n_events": 43,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "18b160d3a7",
+      "status": "completed",
+      "n_frames_indexed": 170,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "0ddb35f585",
+      "status": "completed",
+      "n_frames_indexed": 240,
+      "n_entities": 1,
+      "n_events": 4,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "5d2c735adb",
+      "status": "completed",
+      "n_frames_indexed": 167,
+      "n_entities": 1,
+      "n_events": 17,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "1088228079",
+      "status": "completed",
+      "n_frames_indexed": 129,
+      "n_entities": 0,
+      "n_events": 2,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "235ff86d37",
+      "status": "completed",
+      "n_frames_indexed": 90,
+      "n_entities": 9,
+      "n_events": 80,
+      "ablation_level": 3,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "d33c8343bc",
+      "status": "completed",
+      "n_frames_indexed": 206,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "c4638cc87e",
+      "status": "completed",
+      "n_frames_indexed": 87,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    },
+    {
+      "video_id": "0d0ebe00cc",
+      "status": "completed",
+      "n_frames_indexed": 203,
+      "n_entities": 0,
+      "n_events": 0,
+      "ablation_level": 2,
+      "answer_verification": "supported"
+    }
+  ]
+}

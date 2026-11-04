@@ -1,0 +1,187 @@
+{
+  "video_id": "1088228079",
+  "status": "completed",
+  "answer": "No. This is an artificial competition climbing wall, not a natural cliff, and the climber in black pants and a white vest does not fall off \u2014 after a foot slip they hold on and keep climbing upward to the blue top holds.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 129,
+  "n_entities": 0,
+  "n_events": 2,
+  "ablation_level": 3,
+  "benchmark": {
+    "session_id": "ses_21e594d5",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "pass",
+        "detail": "2 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "pass",
+        "detail": "2 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "pass",
+        "detail": "E01: end_t (1.25) <= start_t (1.75)"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 7,
+    "skipped": 4,
+    "failed": 0,
+    "total": 11,
+    "applicable": 7,
+    "evaluated": 7,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "2 events identically ordered over 7 permutations, not input position"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "2 OCR rows, 0 temporally mismatched"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "E01: end_t (1.25) <= start_t (1.75)"
+      },
+      {
+        "test": "interaction",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 0,
+      "implausible_resumes": 0,
+      "appearance_switches": 0,
+      "identity_precision_proxy": null,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 2,
+      "events_unsupported": 0,
+      "unsupported_event_rate": 0.0
+    },
+    "ablation": {
+      "level": 3,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 129,
+        "entities": 0,
+        "events": 2,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The woman in black clothes grabs the rocks in front of her, continuously climbing upwards, then loses grip and falls from the cliff.",
+  "gt": {
+    "annotated_frames_with_masks": 235,
+    "masks_total": 663,
+    "mean_mask_fill_20": 0.0256
+  }
+}

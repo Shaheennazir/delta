@@ -47,13 +47,29 @@ def run_all(session_id: str) -> dict:
         duration = 0.0
 
     tests: list[dict] = []
-    # 1. Order is timestamp-derived: reversing input must not change output order.
+    # 1. Order is timestamp-derived: every permutation of the same timestamped
+    #    events must order identically (pure function of start/end/id).
     if len(events) >= 2:
-        rev = temporal.order_events(list(reversed(events)))
+        import random as _rnd
         fwd = temporal.order_events(events)
-        ok = [e["event_id"] for e in rev] == [e["event_id"] for e in fwd]
+        fwd_ids = [e["event_id"] for e in fwd]
+        fwd_keys = [(float(e.get("start_t", 0)), float(e.get("end_t", 0)),
+                     str(e.get("event_id", ""))) for e in fwd]
+        perms = [list(reversed(events))]
+        perms.append(sorted(events, key=lambda e: str(e.get("event_id", ""))))
+        perms.append(events[1:] + events[:1])  # rotation
+        rng = _rnd.Random(0)
+        for _ in range(3):
+            p = list(events)
+            rng.shuffle(p)
+            perms.append(p)
+        ok = all([e["event_id"] for e in temporal.order_events(p)] == fwd_ids
+                 and [(float(e.get("start_t", 0)), float(e.get("end_t", 0)),
+                       str(e.get("event_id", ""))) for e in temporal.order_events(p)] == fwd_keys
+                 for p in perms)
         tests.append(_t("frame_shuffle", ok,
-                        f"{len(events)} events reordered by timestamp, not input position"))
+                        f"{len(events)} events identically ordered over "
+                        f"{len(perms) + 1} permutations, not input position"))
     else:
         tests.append(_skip("frame_shuffle", "need >=2 events"))
 
@@ -278,9 +294,75 @@ def run_all(session_id: str) -> dict:
     passed = sum(1 for t in tests if t["result"] == "pass")
     skipped = sum(1 for t in tests if t["result"] == "skip")
     failed = sum(1 for t in tests if t["result"] == "fail")
+    evaluated = passed + failed  # applicable == evaluated; skips are not evidence
+    coverage = [{"test": t["test"], "applicable": t["result"] != "skip",
+                 "evaluated": t["result"] != "skip", "result": t["result"],
+                 "reason": t.get("detail", "")} for t in tests]
+    metrics = _session_metrics(events, observations, frames, duration or 0.0)
     return {"session_id": session_id, "tests": tests,
             "passed": passed, "skipped": skipped, "failed": failed,
-            "total": len(tests), "ablation": ablation_level(session_id)}
+            "total": len(tests), "applicable": evaluated, "evaluated": evaluated,
+            "coverage": coverage, "metrics": metrics,
+            "ablation": ablation_level(session_id)}
+
+
+def _session_metrics(events: list[dict], observations: list[dict],
+                     frames: list[dict], duration: float) -> dict:
+    """Honest proxies, not ground truth. Identity precision/recall need labelled
+    continuations; without them we report what is measurable: gap plausibility
+    counts, and the unsupported-event rate from the evidence gate."""
+    import identity as _ident
+    import evidence as _ev
+    known = {int(r.get("frame_index", -1)) for r in frames}
+    times = {int(r.get("frame_index", -1)): float(r.get("t", 0.0)) for r in frames}
+    gaps, implausible, switches = 0, 0, 0
+    by_fi = {int(r.get("frame_index", -1)): r for r in frames}
+    for eid in {o.get("entity_id") for o in observations}:
+        rows = sorted((o for o in observations if o.get("entity_id") == eid),
+                      key=lambda o: float(o.get("t", 0)))
+        for a, b in zip(rows, rows[1:]):
+            dt = float(b.get("t", 0)) - float(a.get("t", 0))
+            if dt > 1.5:
+                gaps += 1
+                if not _ident.resume_plausible(a.get("bbox", [0, 0, 1, 1]),
+                                               b.get("bbox", [0, 0, 1, 1]), dt):
+                    implausible += 1
+                    continue
+                try:
+                    import os as _os
+                    pb = by_fi.get(int(a.get("frame_index", -1)), {}).get("path", "")
+                    pa = by_fi.get(int(b.get("frame_index", -1)), {}).get("path", "")
+                    if pb and pa and _os.path.exists(pb) and _os.path.exists(pa):
+                        db = _ident.descriptor(pb, a.get("bbox", []))
+                        da = _ident.descriptor(pa, b.get("bbox", []))
+                        if db and da and _ident.cosine(db, da) < 0.50:
+                            switches += 1
+                except Exception:
+                    pass
+    bad_plausible = implausible + switches
+    identity_precision_proxy = round(1.0 - bad_plausible / gaps, 4) if gaps else None
+    # Recall needs ground-truth continuations: report unbridged gaps instead.
+    unsupported, checkable = 0, 0
+    for e in events:
+        ev = e.get("evidence") or []
+        if not ev:
+            continue
+        checkable += 1
+        try:
+            ok, _ = _ev.verify(ev, duration or 0.0, known, times)
+        except Exception:
+            ok = False
+        if not ok:
+            unsupported += 1
+    return {"track_gaps_gt_1_5s": gaps, "implausible_resumes": implausible,
+            "appearance_switches": switches,
+            "identity_precision_proxy": identity_precision_proxy,
+            "identity_recall": None,
+            "identity_recall_note": "needs ground-truth continuations; "
+                                    "unbridged gap count reported instead",
+            "events_checkable": checkable,
+            "events_unsupported": unsupported,
+            "unsupported_event_rate": round(unsupported / checkable, 4) if checkable else None}
 
 
 def ablation_level(session_id: str) -> dict:
