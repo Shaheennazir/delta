@@ -23,7 +23,7 @@ from orchestrator import (
     save_progress,
     save_report,
 )
-from schemas import QARequest, SessionReport, VideoSessionInput
+from schemas import QAOutcome, QARequest, SessionReport, VideoSessionInput
 
 app = FastAPI(title="delta — Video Intelligence Engine")
 app.add_middleware(
@@ -210,6 +210,63 @@ def list_qa(session_id: str) -> dict:
     _require_report(session_id)
     import store
     return {"session_id": session_id, "qa": store.get_qa(session_id)}
+
+
+@app.get("/api/v1/sessions/{session_id}/state")
+def read_state(session_id: str) -> dict:
+    _require_report(session_id)
+    import store
+    import temporal
+    import events as ev_graph
+    events = store.get_events(session_id)
+    return {"session_id": session_id,
+            "states": ev_graph.state_timeline(events),
+            "contradictions": temporal.contradictions(events)}
+
+
+@app.get("/api/v1/sessions/{session_id}/alignment")
+def read_alignment(session_id: str) -> dict:
+    _require_report(session_id)
+    import store
+    sess = store.get_session(session_id) or {}
+    return {"session_id": session_id,
+            "offset_s": float(sess.get("av_offset_s") or 0.0),
+            "confidence": float(sess.get("av_sync_confidence") or 0.0),
+            "method": "rms-vs-motion-xcorr"}
+
+
+@app.get("/api/v1/calibration")
+def read_calibration() -> dict:
+    import confidence
+    import store
+    rows = store.get_outcomes()
+    pairs = [(float(r["raw_confidence"]), int(r["correct"])) for r in rows]
+    return {"points": store.get_calibration(), "n_outcomes": len(pairs),
+            "brier": confidence.brier(pairs),
+            "ece": confidence.expected_calibration_error(pairs),
+            "selective": confidence.selective_threshold(pairs) if pairs else None}
+
+
+@app.post("/api/v1/sessions/{session_id}/qa/{qa_id}/outcome")
+def record_qa_outcome(session_id: str, qa_id: str, body: QAOutcome) -> dict:
+    _require_report(session_id)
+    import confidence
+    import store
+    row = next((q for q in store.get_qa(session_id) if q["qa_id"] == qa_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown qa_id")
+    store.save_outcome(session_id, qa_id, float(row.get("raw_confidence") or row.get("confidence") or 0),
+                       body.correct)
+    return {"session_id": session_id, "qa_id": qa_id, **confidence.fit_from_outcomes()}
+
+
+@app.post("/api/v1/sessions/{session_id}/outcome")
+def record_answer_outcome(session_id: str, body: QAOutcome) -> dict:
+    report = _require_report(session_id)
+    import confidence
+    import store
+    store.save_outcome(session_id, "answer", float(report.answer_confidence), body.correct)
+    return {"session_id": session_id, **confidence.fit_from_outcomes()}
 
 
 @app.post("/api/v1/sessions/{session_id}/qa")

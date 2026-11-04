@@ -1,6 +1,11 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
-- `schemas.py` → Pydantic v2 contracts: VideoSessionInput (title/focus/video_url), SessionReport (summary/themes/transcript/turns/moments/on_screen_text/has_audio/video). extra=forbid.
+- `schemas.py` → Pydantic v2 contracts: VideoSessionInput, SessionReport (answer + answer_evidence/answer_confidence/answer_verification/answer_calibration + av_offset_s/av_sync_confidence), EvidenceSpan (source_id/kind/verification), AnswerClaim, GraphEvent (candidate_id/source), QAOutcome/QAResponse(abstained).
+- `identity.py` → NEW: instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update.
+- `confidence.py` → NEW: isotonic (PAVA) calibration from labelled outcomes, Brier/ECE, selective-prediction threshold at max 10% risk; `apply_saved` returns (score, "isotonic"|"uncalibrated"); no calibrated claim without outcomes.
+- `av_align.py` → NEW: audio-RMS vs visual-motion cross-correlation on 50 ms grid, ±2 s lag search; `estimate_offset` + `events_offset`; flat/insufficient signals report confidence 0 with method flag, never fake sync.
+- `retrieval.py` → NEW: uniform evidence index (events/entities/speech/OCR/audio) with IDF lexical score + time-hint overlap fraction; stored confidence is tiebreak only; spans + frame ids come from the index, never the model.
+- `transcribe.py` → `extract_wav` (imageio-ffmpeg binary → mono 24kHz WAV, None when no audio) + `transcribe_wav` (POST `/asr/transcribe` DIARIZATION, 240s budget, TimeoutError instead of hang) + `transcribe_video` (accepts shared wav_bytes, no double ffmpeg). No mocks; transcribe timeout degrades to empty, never fails the session.
 - `transcribe.py` → `extract_wav` (imageio-ffmpeg binary → mono 24kHz WAV, None when no audio) + `transcribe_wav` (POST `/asr/transcribe` DIARIZATION, 240s budget, TimeoutError instead of hang) + `transcribe_video` (accepts shared wav_bytes, no double ffmpeg). No mocks; transcribe timeout degrades to empty, never fails the session.
 - `agent.py` → muse-spark contributor agent tool registry (transcribe_full_audio | segment_track_sam | ocr_frames | detect_audio_events | extract_event_graph | understand_verify); `run_perception` gathers the 4 perception tools concurrently; `_understand_tool` starts Spark video understanding as soon as upload + transcript are ready (often during frame decode) and `run_fusion_understanding` awaits that `intel_task`; `run_fusion_understanding` fuses -> event graph -> Spark -> evidence verify. Every call logs sent/waiting/received/failed to the trace store.
 - `intel.py` → `analyze_video` (muse-spark-1.3-contributor Responses + `input_file` file_id + transcript, strict json_schema, clamps `t_start/t_end` to duration). The viewer prompt is answered first (`answer` field) before summary/themes/moments. No fallback.
@@ -10,19 +15,41 @@
 - `store.py` → sqlite persistence (`data/delta.db`): sessions (incl. direct `answer`)/progress/frames/entities/observations/events/ocr/audio_events/qa_runs/trace; old DBs backfill the `answer` column on init.
 - `observer.py` → adaptive sampling (motion + scene cuts, 0.5/3/15 FPS tiers) + JPEG frame store `frames/<session>/`; two ffmpeg passes total (raw probe pipe + one balanced-select materialise), never one process per frame.
 - `ocr.py` → independent still-image OCR passes (concurrent gather, 90s per-image budget) + multi-frame voting with frame refs.
-- `entities.py` → SAM 3.1 entity registry (Spark concept proposals + per-concept streams + IoU merge, ≤3 concepts, 240s per-stream budget).
-- `audio_events.py` → deterministic non-speech event detection from WAV energy.
-- `temporal.py` → Allen interval algebra + ordering/contradiction/clamp (deterministic time).
-- `events.py` → event-graph extraction (Spark proposes, temporal disposes).
-- `evidence.py` → evidence contracts + verify gate + calibration + abstention.
-- `investigator.py` → plan-observe-reflect QA agent over the event graph + the stored Spark analysis (`answer`/summary/themes/moments/transcript); plan and inspection prompts both receive that context, so follow-up questions reuse what the full-video pass already learned.
-- `benchmark.py` → 10 offline adversarial tests + ablation level 1–4.
-- `app.py` → FastAPI + engine endpoints (`/events /entities /frames /ocr /audio-events /trace /tools /qa /benchmark`); `/segmentation` returns real entity lanes; SSE carries the last 20 trace rows; unknown sessions 404.
+- `entities.py` → instance-level registry: one candidate per SAM object id (never per concept stream), IoU merge at 0.65, then `identity.assign` binds each instance to cross-session `global_id` via appearance gallery.
+- `audio_events.py` → deterministic non-speech detection + `rms_envelope` (50 ms hop) and `shift_events` (audio-clock → video-clock) used by av_align.
+- `temporal.py` → Allen interval algebra + ordering/contradiction/clamp; `contradictions(events, duration)` now also flags out-of-range spans and mutually-exclusive same-entity state values over overlapping time.
+- `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark only labels by candidate_id; `state_timeline` merges contiguous same-value intervals.
+- `evidence.py` → verify gate checks span bounds + frame-id existence + frame-time-inside-span (tol 1.0 s); `calibrate_detail` routes through persisted isotonic curve; `decision` uses selective threshold from outcomes (0.5 prior when none); `abstain` carries reason.
+- `investigator.py` → plan → retrieve (retrieval.py over full index) → inspect (must cite evidence ids) → gate (resolve ids to stored spans, frame-time verify, calibrate, selective abstain). No model-authored timestamps.
+- `benchmark.py` → 10 adversarial tests, all derived from stored data; unevaluable tests report `skip`, never pass. Covers shuffle, deletion, audio-missing honesty, measured +2 s desync shift, cross-identity IoU, occlusion resume, OCR time attribution, reversal, empty-evidence, high-confidence abstention.
+- `store.py` → adds `entity_gallery`, `calibration_points`, `outcomes` tables; sessions gains answer_evidence/confidence/verification/calibration + av_offset/confidence; entities gains global_id; qa_runs gains raw_confidence.
+- `agent.py` → tracking passes frame_rows/session_id for descriptors; fusion attaches frames actually inside each span, verifies answer claims per-claim, calibrates, abstains the direct answer when ungated.
+- `orchestrator.py` → measured A/V offset applied only when av_align reports a valid measurement; transcript turns + audio rows shifted to video clock; answer evidence/confidence/verification persisted.
+- `app.py` → FastAPI + engine endpoints (`/events /entities /frames /ocr /audio-events /trace /tools /qa /benchmark` plus NEW `/state /alignment /calibration`, POST `/qa/{qa_id}/outcome`, POST `/outcome`); `/segmentation` returns real entity lanes; SSE carries the last 20 trace rows; unknown sessions 404.
 - `test_api.py` → real-pipeline tests: 422 sandboxing, upload validation, `test_create_session_real_pipeline_completes` (tiny silent clip → completed, non-empty summary, `has_audio is False`), SSE completes.
 - `frontend/` → Next.js 15: app/page.tsx (VideoWorkspace: native `<video>`, Answer card (the direct reply to the viewer prompt), summary/themes/transcript/turns, progress checklist `queued/uploading/preparing/observing/perceiving/events/understanding/verifying/completed`, live agent TracePanel sent/waiting/received), components (VideoConfigSidebar, MomentCards, MomentTimelineBar), lib/api.ts + types.ts (VideoMoment/TranscriptTurn/SessionReport). `npm run build` clean. Deleted: DrillConfigSidebar, CoachDiagnosticCards, InteractiveStage, SamVideoPlayer, TacticalSvgOverlay, ViolationTimelineBar, lib/sam.ts.
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-04] — Full capability pass: identity, alignment, retrieval, calibrated abstention, honest benchmark
+
+**What changed:**
+- `identity.py` (new) + `entities.py` + `store.py` (`entity_gallery`): one identity per SAM object id with appearance descriptors; cross-session `global_id` via cosine match within kind; running-mean gallery update in sqlite.
+- `av_align.py` (new) + `audio_events.py` (`rms_envelope`/`shift_events`) + `orchestrator.py`: measured RMS-vs-motion cross-correlation (±2 s); audio rows + transcript turns shifted to video clock only on valid measurement; offset + confidence persisted and served at `/alignment`.
+- `events.py` rewritten: deterministic signal-derived candidates (presence segments, motion runs with direction, speech/OCR/audio) with typed state transitions; Spark labels by candidate_id only; `temporal.contradictions` enforces state exclusivity + range.
+- `retrieval.py` (new) + `investigator.py` rewritten: uniform evidence index with IDF + time-hint retrieval; inspector must cite ids; spans resolved from the index; frame-time verification; calibrated confidence; selective abstention.
+- `intel.py` + `agent.py` + `schemas.py` + `orchestrator.py` + `store.py`: answer is now per-claim timestamped (`answer_claims`), each claim verified against frames inside its span; unverified/low-confidence answers abstain with reason; evidence/confidence/verification/calibration persisted and returned.
+- `confidence.py` (new) + `evidence.py` rewritten + `app.py` (`/calibration`, `/outcome`, `/qa/{qa_id}/outcome`): isotonic PAVA calibration from human outcomes, Brier/ECE, selective threshold at ≤10% risk; no calibrated claim without outcomes.
+- `benchmark.py` rewritten: all 10 tests derive verdicts from stored data; skips instead of fake passes; desync test measures a real +2 s shift; abstention test uses 0.99 confidence with unknown grounding.
+- `test_capabilities.py` (new, 8 tests) + `test_engine2.py` (updated): instance identity, measured lag, signal-derived events, state contradictions, retrieval spans, frame-time verify, isotonic fit, benchmark honesty. 14/14 pass offline.
+- `frontend/lib/types.ts` + `frontend/app/page.tsx`: Answer card shows confidence/verification/calibration + evidence spans; types mirror new EvidenceSpan/GraphEvent/QARecord/SessionReport fields.
+
+**Why:**
+- The previous engine had concept-level identities, assumed A/V sync, LLM-authored timestamps, an uncited direct answer, fixed 0.35 abstention, and three always-pass benchmark checks. Each listed capability is now backed by a measured or derived mechanism instead.
+
+**Impact:**
+- sqlite schema migrates on `init_db` (new tables + columns, old DBs backfilled). `GET /sessions/{id}` now returns answer evidence + A/V offset. New endpoints: `/state`, `/alignment`, `/calibration`, outcome feedback. Long clips cost unchanged (~8 Spark calls + ≤3 SAM streams); calibration improves only after outcomes are recorded.
 
 ### [2026-11-04] — Viewer prompt is answered directly (prompt → analysis → answer)
 

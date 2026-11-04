@@ -19,15 +19,31 @@ INPUT: a viewer prompt (question or focus) plus a video file and its speech tran
 TASK:
 1. Watch the video (frames + embedded audio) and read the transcript.
 2. Answer the viewer prompt directly first (1-3 sentences). It may be a question ("which side played better?") or an instruction ("summarize…"); answer from the video, not from assumptions.
-3. Then write a concise summary (3-6 sentences), 3-8 themes, and 3-12 timestamped moments.
-4. Every moment MUST be grounded in something visible or audible at that time — never guess from language priors alone. If unsure, drop the moment.
-5. Transcribe visible on-screen text briefly (empty string when none).
-6. Timestamps are seconds from video start; end > start; keep within duration."""
+3. Return answer_claims: one claim per factual statement in the answer, each with the exact start_t/end_t of the moment that supports it and a confidence 0-1. If a claim cannot be tied to a time, do not make it.
+4. Then write a concise summary (3-6 sentences), 3-8 themes, and 3-12 timestamped moments.
+5. Every moment MUST be grounded in something visible or audible at that time — never guess from language priors alone. If unsure, drop the moment.
+6. Transcribe visible on-screen text briefly (empty string when none).
+7. Timestamps are seconds from video start; end > start; keep within duration.
+8. If the video does not contain enough evidence to answer, return answer "" and an empty answer_claims list — never guess."""
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
+        "answer_claims": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "start_t": {"type": "number"},
+                    "end_t": {"type": "number"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["text", "start_t", "end_t", "confidence"],
+                "additionalProperties": False,
+            },
+        },
         "summary": {"type": "string"},
         "themes": {"type": "array", "items": {"type": "string"}},
         "moments": {
@@ -46,7 +62,7 @@ SCHEMA = {
         },
         "on_screen_text": {"type": "string"},
     },
-    "required": ["answer", "summary", "themes", "moments", "on_screen_text"],
+    "required": ["answer", "answer_claims", "summary", "themes", "moments", "on_screen_text"],
     "additionalProperties": False,
 }
 
@@ -84,8 +100,9 @@ async def analyze_video(file_id: str, focus: str, transcript: str,
         f"Duration: {duration_s:.1f}s\n"
         f"Speech transcript:\n{transcript or '(no speech detected)'}\n"
         f"Turns:\n{turn_txt or '(none)'}\n"
-        "First answer the viewer prompt directly. Then return summary, themes, grounded "
-        "moments with second timestamps, and on-screen text."
+        "First answer the viewer prompt directly, with one timestamped answer_claim per "
+        "factual statement. Then return summary, themes, grounded moments with second "
+        "timestamps, and on-screen text. Empty answer when the video lacks evidence."
     )
     body = await post_unary({
         "model": SPARK_MODEL,
@@ -100,7 +117,20 @@ async def analyze_video(file_id: str, focus: str, transcript: str,
         }},
     })
     out = json.loads(extract_text(body))
-    # Clamp timestamps into range; drop invalid moments.
+    # Clamp timestamps into range; drop invalid moments/claims. No re-timing by the model.
+    claims = []
+    for i, c in enumerate(out.get("answer_claims", []) or []):
+        try:
+            s, e = float(c["start_t"]), float(c["end_t"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if duration_s > 0:
+            s, e = max(0.0, s), min(duration_s, e)
+        if e <= s:
+            continue
+        claims.append({"claim_id": f"a_{i + 1:02d}", "text": str(c.get("text", ""))[:400],
+                       "start_t": round(s, 2), "end_t": round(e, 2),
+                       "confidence": max(0.0, min(1.0, float(c.get("confidence", 0.0))))})
     moments = []
     for i, m in enumerate(out.get("moments", []) or []):
         try:
@@ -115,6 +145,7 @@ async def analyze_video(file_id: str, focus: str, transcript: str,
                         "t_end": round(e, 2), "label": str(m.get("label", ""))[:120],
                         "detail": str(m.get("detail", ""))[:600]})
     return {"answer": str(out.get("answer", ""))[:1500],
+            "answer_claims": claims[:8],
             "summary": str(out.get("summary", ""))[:4000],
             "themes": [str(t)[:80] for t in out.get("themes", [])][:8],
             "moments": moments[:12],

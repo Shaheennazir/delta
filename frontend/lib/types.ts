@@ -20,6 +20,10 @@ export interface SessionReport {
   status: string;
   title: string;
   answer?: string;
+  answer_evidence?: EvidenceSpan[];
+  answer_confidence?: number;
+  answer_verification?: string;
+  answer_calibration?: string;
   summary: string;
   themes: string[];
   transcript: string;
@@ -32,6 +36,8 @@ export interface SessionReport {
   n_entities?: number;
   n_events?: number;
   ablation_level?: number;
+  av_offset_s?: number;
+  av_sync_confidence?: number;
 }
 
 export interface SessionProgress {
@@ -53,10 +59,15 @@ export interface EvidenceSpan {
   start: number;
   end: number;
   frame_ids: number[];
+  source_id?: string;
+  kind?: string;
+  verification?: string;
 }
 
 export interface GraphEvent {
   event_id: string;
+  candidate_id?: string;
+  source?: string;
   action: string;
   entity_ids: string[];
   start_t: number;
@@ -89,7 +100,10 @@ export interface QARecord {
   answer: string;
   evidence: EvidenceSpan[];
   confidence: number;
+  raw_confidence?: number;
   verification: string;
+  abstained?: boolean;
+  calibration?: string;
 }
 
 export interface BenchmarkTest {

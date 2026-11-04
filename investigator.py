@@ -1,17 +1,17 @@
-"""Active-perception investigator: the LLM interrogates the video, not vice versa.
+"""Active-perception investigator: retrieve evidence, answer, verify, abstain.
 
-Plan -> observe -> reflect loop (max 2 inspection rounds, ≤3 Spark calls):
- 1. PLAN: Spark turns the question + event-graph summary into an evidence plan
-    (target entities, time interval, what would prove/disprove the claim).
- 2. OBSERVE: deterministic event-graph queries (temporal.py) + frame fetches.
-    If the interval is thin, re-decode the original clip at higher fps for
-    that span only (bounded), then ask Spark a focused visual question on
-    those stills.
- 3. REFLECT: evidence.verify gates the answer; thin evidence is calibrated
-    down; contradictions or empty grounding abstain.
+Plan -> retrieve -> inspect -> gate:
+  1. PLAN: Spark proposes a search interval/strategy (never timestamps used as
+     evidence by themselves).
+  2. RETRIEVE: retrieval.py ranks events/entities/speech/OCR/audio by the
+     question and time hints. Spans and frame ids come from the index.
+  3. INSPECT: Spark sees the retrieved evidence list + ≤6 stills and must cite
+     evidence ids it used.
+  4. GATE: every cited id is resolved to its stored span, frames are checked
+     against the span, confidence is calibrated, low/unknown -> abstention.
 
- Stateless per call; all observations come from the sqlite frame/event store
- or a bounded re-decode of the session's own upload. No external knowledge.
+No timestamp in the final evidence is authored by the model; all come from the
+deterministic index or a bounded re-decode of the session's own upload.
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ import os
 import imageio.v3 as iio
 import numpy as np
 
-import temporal
 import evidence as evmod
+import retrieval
 
 log = logging.getLogger("delta.investigator")
 
@@ -116,19 +116,28 @@ async def _plan(question: str, summary: str, duration: float, analysis: str = ""
         return {"targets": [], "interval": [0.0, duration], "strategy": "track", "disproof": ""}
 
 
+def _evidence_lines(items: list[dict]) -> str:
+    return "\n".join(
+        f"{i['id']} | {i['kind']} | [{i['start']:.2f}-{i['end']:.2f}s] | "
+        f"frames={i['frame_ids'][:4]} | {i['text'][:180]}"
+        for i in items)[:6000]
+
+
 async def _inspect(question: str, frame_paths: list[str], times: list[float],
-                   analysis: str = "") -> dict:
-    """Focused visual QA on ≤6 stills plus the prior full-video analysis."""
+                   analysis: str, items: list[dict]) -> dict:
+    """Focused visual QA on ≤6 stills plus retrieved evidence; ids are mandatory."""
     import base64
     from spark import SPARK_MODEL, extract_text, post_unary
     content: list[dict] = [{"type": "input_text", "text":
         f"Question about this video: {question}\n"
         f"Prior full-video analysis:\n{analysis}\n"
+        f"Retrieved evidence (id | kind | span | frames | text):\n{_evidence_lines(items)}\n"
         f"Stills are at times {['%.1f' % t for t in times]}s.\n"
-        "Answer from the prior analysis and the stills only. Return {\"answer\": str, "
-        "\"visible\": true/false, \"confidence\": 0-1, "
-        "\"grounding\": \"observed|inferred|unknown\"} where observed means visible in a "
-        "still, inferred means supported by the prior analysis, unknown means neither."}]
+        "Answer from the retrieved evidence and stills only. Return {\"answer\": str, "
+        "\"evidence_ids\": [ids actually used], \"visible\": true/false, "
+        "\"confidence\": 0-1, \"grounding\": \"observed|inferred|unknown\"} where observed "
+        "means visible in a still, inferred means supported by an evidence item, unknown "
+        "means neither. Cite at least one id for any factual answer."}]
     for p in frame_paths[:6]:
         try:
             with open(p, "rb") as f:
@@ -137,25 +146,33 @@ async def _inspect(question: str, frame_paths: list[str], times: list[float],
         except OSError:
             continue
     if len(content) == 1:
-        return {"answer": "", "visible": False, "confidence": 0.0, "grounding": "unknown"}
+        return {"answer": "", "evidence_ids": [], "visible": False,
+                "confidence": 0.0, "grounding": "unknown"}
     body = await post_unary({
         "model": SPARK_MODEL,
-        "instructions": "Answer from the prior analysis and visible evidence only. Strict JSON.",
+        "instructions": "Answer only from retrieved evidence and visible frames. Cite ids. Strict JSON.",
         "input": [{"type": "message", "role": "user", "content": content}],
         "text": {"format": {"type": "json_schema", "name": "Inspect",
                  "schema": {"type": "object",
-                            "properties": {"answer": {"type": "string"}, "visible": {"type": "boolean"},
-                                           "confidence": {"type": "number"}, "grounding": {"type": "string"}},
-                            "required": ["answer", "visible", "confidence", "grounding"],
+                            "properties": {"answer": {"type": "string"},
+                                           "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                                           "visible": {"type": "boolean"},
+                                           "confidence": {"type": "number"},
+                                           "grounding": {"type": "string"}},
+                            "required": ["answer", "evidence_ids", "visible",
+                                         "confidence", "grounding"],
                             "additionalProperties": False}, "strict": True}},
     })
     try:
         d = json.loads(extract_text(body))
-        return {"answer": str(d.get("answer", ""))[:1000], "visible": bool(d.get("visible", False)),
+        return {"answer": str(d.get("answer", ""))[:1000],
+                "evidence_ids": [str(x)[:80] for x in (d.get("evidence_ids") or [])][:8],
+                "visible": bool(d.get("visible", False)),
                 "confidence": max(0.0, min(1.0, float(d.get("confidence", 0.0)))),
                 "grounding": str(d.get("grounding", "unknown"))}
     except Exception:
-        return {"answer": "", "visible": False, "confidence": 0.0, "grounding": "unknown"}
+        return {"answer": "", "evidence_ids": [], "visible": False,
+                "confidence": 0.0, "grounding": "unknown"}
 
 
 def _densify(video_bytes: bytes | None, session_id: str, start: float, end: float,
@@ -188,59 +205,85 @@ def _densify(video_bytes: bytes | None, session_id: str, start: float, end: floa
 
 
 async def answer_question(session_id: str, question: str, video_url: str = "") -> dict:
-    """Run plan-observe-reflect; persist + return the QA record."""
+    """Run plan-retrieve-inspect-gate; persist + return the QA record."""
     import uuid
     import store
     events = store.get_events(session_id)
     entities, observations = store.get_entities(session_id)
     frames = store.get_frames(session_id)
+    turns = []
     sess = store.get_session(session_id) or {}
     try:
-        duration = float((__import__("json").loads(sess.get("video_json") or "{}")).get("duration_s", 0))
+        turns = json.loads(sess.get("turns_json") or "[]")
+    except Exception:
+        turns = []
+    ocr = store.get_ocr(session_id)
+    audio = store.get_audio_events(session_id)
+    try:
+        duration = float((json.loads(sess.get("video_json") or "{}")).get("duration_s", 0))
     except Exception:
         duration = 0.0
     if duration <= 0 and events:
         duration = max(float(e.get("end_t", 0)) for e in events)
     known_frames = {int(r["frame_index"]) for r in frames}
+    frame_times = {int(r["frame_index"]): float(r["t"]) for r in frames}
     by_frame = {int(r["frame_index"]): r for r in frames}
     analysis = _analysis_context(sess)
 
     plan = await _plan(question, _graph_summary(events, entities), duration or 0.0, analysis)
-    s, e = plan["interval"]
-    # Deterministic graph context: events overlapping the planned interval.
-    overlapping = [x for x in events
-                   if temporal.overlaps(float(x.get("start_t", 0)), float(x.get("end_t", 0)), s, e)]
-    _ = overlapping  # surfaced in trace below
+    items = retrieval.retrieve(session_id, question, events, entities, observations,
+                               turns, ocr, audio, frames, duration or 0.0)
+    if not items:
+        qa_id = f"qa_{uuid.uuid4().hex[:8]}"
+        rec = evmod.abstain(question, "no retrievable evidence")
+        rec["trace"] = {"plan": plan, "retrieved": []}
+        store.save_qa(session_id, qa_id, question, rec["answer"], [], 0.0, "unknown", 0.0)
+        return {"qa_id": qa_id, "question": question, **rec}
 
-    # Observe: existing frames in interval, densify if thin.
-    in_interval = [r for r in frames if s - 0.5 <= float(r["t"]) <= e + 0.5]
-    paths = [r["path"] for r in in_interval[:6] if os.path.exists(r.get("path", ""))]
-    times = [float(r["t"]) for r in in_interval[:6]]
+    s, e = plan["interval"]
+    fids = [f for it in items[:6] for f in it["frame_ids"]]
+    paths = [by_frame[f]["path"] for f in fids if f in by_frame
+             and os.path.exists(by_frame[f].get("path", ""))][:6]
+    times = [float(by_frame[f]["t"]) for f in fids if f in by_frame][:6]
     if len(paths) < 3 and video_url:
         vb = _load_video_bytes(video_url)
         dp, dt = _densify(vb, session_id, s, e, 30.0)
-        paths, times = (dp or paths), (dt or times)
-    insp = await _inspect(question, paths, times, analysis)
+        if len(dp) > len(paths):
+            paths, times = dp, dt
 
-    fids = [int(r["frame_index"]) for r in in_interval[:6]][:6]
-    spans = [{"start": round(s, 2), "end": round(e, 2), "frame_ids": fids}] if fids else []
-    ok, reason = evmod.verify(spans, duration, known_frames)
-    mapping = {"observed": "supported", "inferred": "inferred"}
-    verification = mapping.get(insp.get("grounding", ""), "unknown")
-    if insp.get("grounding") == "unknown" or not ok:
-        verification = "unknown"
-    conf = evmod.calibrate(insp.get("confidence", 0.0), len(spans),
-                           sum(len(sp.get("frame_ids", [])) for sp in spans))
-    if not insp.get("answer") or verification == "unknown" or conf < 0.35:
-        rec = evmod.abstain(question)
-        rec["trace"] = {"plan": plan, "interval_events": [x["event_id"] for x in overlapping],
-                        "reason": reason if not ok else "low-confidence"}
+    insp = await _inspect(question, paths, times, analysis, items)
+    by_id = {it["id"]: it for it in items}
+    used = [by_id[i] for i in insp.get("evidence_ids", []) if i in by_id]
+    spans = [{"start": round(float(it["start"]), 3), "end": round(float(it["end"]), 3),
+              "frame_ids": [int(f) for f in it["frame_ids"]][:6],
+              "source_id": it["id"], "kind": it["kind"],
+              "verification": "supported" if it["frame_ids"] else "inferred"}
+             for it in used]
+    ok, reason = evmod.verify(spans, duration, known_frames, frame_times)
+    support = (len(used) / max(1, len(insp.get("evidence_ids", [])))) if used else 0.0
+    n_frames = sum(len(sp["frame_ids"]) for sp in spans)
+    detail = evmod.calibrate_detail(insp.get("confidence", 0.0), len(spans),
+                                    n_frames, support)
+    verification = "supported" if (ok and spans and insp.get("grounding") != "unknown"
+                                   and any(sp["verification"] == "supported" for sp in spans)) else (
+        "inferred" if (ok and spans and insp.get("grounding") != "unknown") else "unknown")
+    gate = evmod.decision(verification, detail["calibrated"],
+                          bool(insp.get("answer")) and bool(spans))
+    qa_id = f"qa_{uuid.uuid4().hex[:8]}"
+    trace = {"plan": plan, "retrieved": [{k: it[k] for k in ("id", "kind", "start", "end", "score")}
+                                         for it in items],
+             "evidence_ids": insp.get("evidence_ids", []),
+             "verify_reason": reason, "calibration": detail}
+    if gate["abstain"]:
+        rec = evmod.abstain(question, gate["reason"])
+        rec["trace"] = trace
+        store.save_qa(session_id, qa_id, question, rec["answer"], [], 0.0,
+                      "unknown", 0.0)
     else:
         rec = {"answer": insp["answer"], "evidence": spans,
-               "confidence": conf, "verification": verification,
-               "trace": {"plan": plan, "interval_events": [x["event_id"] for x in overlapping],
-                         "reason": reason}}
-    qa_id = f"qa_{uuid.uuid4().hex[:8]}"
-    store.save_qa(session_id, qa_id, question, rec["answer"], rec["evidence"],
-                  rec["confidence"], rec["verification"])
+               "confidence": detail["calibrated"], "raw_confidence": detail["raw"],
+               "verification": verification, "abstained": False,
+               "calibration": detail["method"], "trace": trace}
+        store.save_qa(session_id, qa_id, question, rec["answer"], rec["evidence"],
+                      rec["confidence"], rec["verification"], rec.get("raw_confidence", 0.0))
     return {"qa_id": qa_id, "question": question, **rec}

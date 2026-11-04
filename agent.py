@@ -99,7 +99,8 @@ async def _track_tool(session_id: str, file_id: str, frame_rows: list[dict],
         trace(session_id, "segment_track_sam", "waiting", "SAM 3.1 segmenting+tracking…")
         t0 = time.time()
         entities, observations = await ent_mod.track_session(
-            file_id, concepts, fps, n_frames, media_wh, timeout_per_concept=TRACK_TIMEOUT)
+            file_id, concepts, fps, n_frames, media_wh, timeout_per_concept=TRACK_TIMEOUT,
+            frame_rows=frame_rows, session_id=session_id)
         trace(session_id, "segment_track_sam", "received",
               f"{len(entities)} entities, {len(observations)} observations in {time.time() - t0:.0f}s")
         store.save_entities(session_id, entities, observations)
@@ -207,7 +208,7 @@ async def run_fusion_understanding(session_id: str, file_id: str, focus: str,
         graph_events, _ = await asyncio.wait_for(
             ev_graph.extract_events(
                 perc["entities"], perc["observations"], perc["transcript"]["turns"],
-                perc["ocr"], perc["audio"], duration_s, focus),
+                perc["ocr"], perc["audio"], duration_s, focus, frame_rows=frame_rows),
             timeout=EVENT_GRAPH_TIMEOUT)
         trace(session_id, "extract_event_graph", "received",
               f"{len(graph_events)} grounded event(s) in {time.time() - t0:.0f}s")
@@ -228,19 +229,77 @@ async def run_fusion_understanding(session_id: str, file_id: str, focus: str,
             timeout=UNDERSTAND_TIMEOUT))
     intel = await intel_task
     trace(session_id, "understand_verify", "received",
-          f"summary + {len(intel['moments'])} moment(s) — verifying evidence…")
+          f"summary + {len(intel.get('moments', []))} moment(s), "
+          f"{len(intel.get('answer_claims', []))} answer claim(s) — verifying…")
 
     known_frames = {int(r["frame_index"]) for r in frame_rows}
+    frame_times = {int(r["frame_index"]): float(r["t"]) for r in frame_rows}
+
+    def frames_in(s: float, e: float, limit: int = 6) -> list[int]:
+        return [int(r["frame_index"]) for r in frame_rows
+                if s - 0.5 <= float(r.get("t", 0)) <= e + 0.5][:limit]
+
+    def nearest_frames(s: float, e: float) -> list[int]:
+        if not frame_rows:
+            return []
+        t = (s + e) / 2
+        return [int(min(frame_rows, key=lambda r: abs(float(r["t"]) - t))["frame_index"])]
+
+    # Moments: cited frames must actually sit inside the moment span.
     verified = []
     for m in intel["moments"]:
-        ok, _ = evmod.verify([{"start": m["t_start"], "end": m["t_end"],
-                               "frame_ids": sorted(known_frames)[:4]}],
-                             duration_s, known_frames) if known_frames else (True, "no frame store")
+        fids = frames_in(m["t_start"], m["t_end"]) or nearest_frames(m["t_start"], m["t_end"])
+        if not fids:
+            continue
+        ok, _ = evmod.verify([{"start": m["t_start"], "end": m["t_end"], "frame_ids": fids}],
+                             duration_s, known_frames, frame_times)
         if ok:
             verified.append(m)
+
+    # Answer claims: each must resolve to a valid span; evidence is per claim.
+    claims, claim_spans = [], []
+    for c in intel.get("answer_claims", []):
+        fids = frames_in(c["start_t"], c["end_t"])
+        span = {"start": c["start_t"], "end": c["end_t"], "frame_ids": fids,
+                "source_id": c["claim_id"], "kind": "answer_claim",
+                "verification": "supported" if fids else "inferred"}
+        ok, _ = evmod.verify([span], duration_s, known_frames, frame_times)
+        if not ok:
+            continue
+        claims.append({**c, "verification": span["verification"]})
+        claim_spans.append(span)
     _ = temporal.contradictions(
         [{"event_id": m["moment_id"], "start_t": m["t_start"], "end_t": m["t_end"]}
          for m in verified])
+    _ = temporal.contradictions(
+        [{"event_id": c["claim_id"], "start_t": c["start_t"], "end_t": c["end_t"]}
+         for c in claims])
+
+    raw = sum(c["confidence"] for c in claims) / max(1, len(claims))
+    support = len(claims) / max(1, len(intel.get("answer_claims", []) or [1]))
+    detail = evmod.calibrate_detail(raw, len(claim_spans),
+                                    sum(len(s["frame_ids"]) for s in claim_spans), support)
+    if any(s["verification"] == "supported" for s in claim_spans):
+        answer_verification = "supported"
+    elif claim_spans:
+        answer_verification = "inferred"
+    else:
+        answer_verification = "unknown"
+    gate = evmod.decision(answer_verification, detail["calibrated"],
+                          bool(intel.get("answer")) and bool(claim_spans))
+    if gate["abstain"]:
+        abs_rec = evmod.abstain(focus, gate["reason"])
+        intel["answer"] = abs_rec["answer"]
+        claims, claim_spans = [], []
+        detail = {"calibrated": 0.0, "raw": 0.0, "method": "abstained"}
+        answer_verification = "unknown"
+    intel["answer_claims"] = claims
     trace(session_id, "understand_verify", "received",
-          f"{len(verified)}/{len(intel['moments'])} moments grounded in frame store")
-    return {"intel": intel, "verified": verified, "graph_events": graph_events}
+          f"{len(verified)}/{len(intel['moments'])} moments, {len(claims)} answer "
+          f"claim(s) grounded; verification={answer_verification}")
+    return {"intel": intel, "verified": verified, "graph_events": graph_events,
+            "answer_evidence": claim_spans,
+            "answer_confidence": detail["calibrated"],
+            "answer_verification": answer_verification,
+            "answer_calibration": detail["method"],
+            "abstained": gate["abstain"]}

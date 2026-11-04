@@ -35,6 +35,37 @@ def _read_mono(wav_bytes: bytes) -> tuple[list[float], int]:
     return samples, sr
 
 
+def rms_envelope(wav_bytes: bytes | None, hop_s: float = 0.05) -> tuple[list[float], float]:
+    """Return (RMS per hop, hop seconds) on the audio clock. ([], hop) when empty."""
+    if not wav_bytes:
+        return [], hop_s
+    samples, sr = _read_mono(wav_bytes)
+    if not samples or sr <= 0:
+        return [], hop_s
+    import numpy as np
+    x = np.asarray(samples, dtype=np.float64)
+    win = max(1, int(round(sr * hop_s)))
+    nwin = len(x) // win
+    if nwin < 2:
+        return [], hop_s
+    env = np.sqrt(np.mean(x[:nwin * win].reshape(nwin, win) ** 2, axis=1))
+    return [float(v) for v in env], win / sr
+
+
+def shift_events(rows: list[dict], offset_s: float, duration: float = 0.0) -> list[dict]:
+    """Move audio-clock rows onto the video clock (video_t = audio_t - offset)."""
+    out = []
+    for r in rows or []:
+        s = max(0.0, float(r.get("start_t", 0)) - float(offset_s))
+        e = max(s, float(r.get("end_t", 0)) - float(offset_s))
+        if duration > 0:
+            s, e = min(duration, s), min(duration, e)
+        if e <= s:
+            continue
+        out.append({**r, "start_t": round(s, 3), "end_t": round(e, 3)})
+    return sorted(out, key=lambda x: x["start_t"])
+
+
 def detect(wav_bytes: bytes | None) -> list[dict]:
     if not wav_bytes:
         return []

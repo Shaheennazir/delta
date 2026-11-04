@@ -16,7 +16,8 @@ import os
 import time
 import uuid
 
-from schemas import SessionReport, TranscriptTurn, VideoMeta, VideoMoment, VideoSessionInput
+from schemas import (EvidenceSpan, SessionReport, TranscriptTurn, VideoMeta,
+                     VideoMoment, VideoSessionInput)
 
 log = logging.getLogger("delta.orchestrator")
 
@@ -77,9 +78,18 @@ def _row_to_report(row: dict) -> SessionReport:
         themes = json.loads(row.get("themes_json") or "[]")
     except Exception:
         themes = []
+    try:
+        answer_evidence = [EvidenceSpan(**s) for s in
+                           json.loads(row.get("answer_evidence_json") or "[]")]
+    except Exception:
+        answer_evidence = []
     return SessionReport(
         session_id=row["session_id"], status=row.get("status") or "completed",
         title=row.get("title") or "", answer=row.get("answer") or "",
+        answer_evidence=answer_evidence,
+        answer_confidence=float(row.get("answer_confidence") or 0.0),
+        answer_verification=row.get("answer_verification") or "unknown",
+        answer_calibration=row.get("answer_calibration") or "uncalibrated",
         summary=row.get("summary") or "",
         themes=themes, transcript=row.get("transcript") or "",
         turns=[TranscriptTurn(**{k: t.get(k, 0 if k in ("turnId", "startMs", "endMs") else "")
@@ -90,6 +100,8 @@ def _row_to_report(row: dict) -> SessionReport:
         has_audio=bool(row.get("has_audio")),
         video=VideoMeta(width=video.get("width", 0), height=video.get("height", 0),
                         fps=video.get("fps") or 30.0, duration_s=video.get("duration_s") or 0.0),
+        av_offset_s=float(row.get("av_offset_s") or 0.0),
+        av_sync_confidence=float(row.get("av_sync_confidence") or 0.0),
     )
 
 
@@ -190,6 +202,29 @@ async def run_pipeline_async(inp: VideoSessionInput, progress_cb=None,
             progress_cb({"stage": "perceived", "entities": len(perc["entities"]),
                          "turns": len(perc["transcript"].get("turns", []))})
 
+        # ---- measured A/V alignment: shift audio rows onto the video clock ----
+        # Apply the measured lag only when the measurement itself is valid
+        # (both signals non-flat); validity comes from av_align's method flag,
+        # not from a confidence cutoff.
+        import av_align
+        av = await asyncio.to_thread(av_align.estimate_offset, wav_bytes, frame_rows, duration_s)
+        measurable = av.get("method") not in (
+            "insufficient-signal", "insufficient-audio", "flat-signal")
+        offset = float(av.get("offset_s", 0.0)) if measurable else 0.0
+        if offset and perc["audio"]:
+            import audio_events
+            perc["audio"] = audio_events.shift_events(perc["audio"], offset, duration_s)
+            store.save_audio_events(session_id, perc["audio"])
+        if offset and perc["transcript"].get("turns"):
+            for t in perc["transcript"]["turns"]:
+                t["startMs"] = max(0.0, float(t.get("startMs", 0)) - offset * 1000)
+                t["endMs"] = max(float(t["startMs"]), float(t.get("endMs", 0)) - offset * 1000)
+        store.upsert_session(session_id, av_offset_s=float(av.get("offset_s", 0.0)),
+                             av_sync_confidence=float(av.get("confidence", 0.0)))
+        store.append_trace(session_id, "av_align", "received",
+                           f"offset {av.get('offset_s', 0):+.2f}s "
+                           f"(confidence {av.get('confidence', 0):.2f}, {av.get('method', '')})")
+
         # ---- events -> understanding -> verifying (need all perception outputs) ----
         save_progress(session_id, "events", "Building event graph…")
         fused = await agent.run_fusion_understanding(
@@ -203,7 +238,12 @@ async def run_pipeline_async(inp: VideoSessionInput, progress_cb=None,
         level = 1 + (1 if frame_rows else 0) + (1 if (perc["entities"] or graph_events) else 0)
         report = SessionReport(
             session_id=session_id, status="completed", title=inp.title,
-            answer=intel["answer"], summary=intel["summary"], themes=intel["themes"],
+            answer=intel["answer"],
+            answer_evidence=[EvidenceSpan(**s) for s in fused.get("answer_evidence", [])],
+            answer_confidence=float(fused.get("answer_confidence", 0.0)),
+            answer_verification=str(fused.get("answer_verification", "unknown")),
+            answer_calibration=str(fused.get("answer_calibration", "uncalibrated")),
+            summary=intel["summary"], themes=intel["themes"],
             transcript=tr["transcript"],
             turns=[TranscriptTurn(**{k: t.get(k, 0 if k in ("turnId", "startMs", "endMs") else "")
                                      for k in ("turnId", "startMs", "endMs", "transcript", "speaker")})
@@ -214,15 +254,24 @@ async def run_pipeline_async(inp: VideoSessionInput, progress_cb=None,
             video=VideoMeta(width=W, height=H, fps=fps, duration_s=duration_s),
             n_frames_indexed=len(frame_rows), n_entities=len(perc["entities"]),
             n_events=len(graph_events), ablation_level=level,
+            av_offset_s=float(av.get("offset_s", 0.0)),
+            av_sync_confidence=float(av.get("confidence", 0.0)),
         )
         save_report(report)
         store.upsert_session(
             session_id, status="completed", title=inp.title, focus=inp.focus,
-            video_url=inp.video_url, answer=intel["answer"], summary=intel["summary"],
+            video_url=inp.video_url, answer=intel["answer"],
+            answer_evidence_json=json.dumps(fused.get("answer_evidence", [])),
+            answer_confidence=float(fused.get("answer_confidence", 0.0)),
+            answer_verification=str(fused.get("answer_verification", "unknown")),
+            answer_calibration=str(fused.get("answer_calibration", "uncalibrated")),
+            summary=intel["summary"],
             themes_json=json.dumps(intel["themes"]), transcript=tr["transcript"],
             turns_json=json.dumps(tr["turns"]), moments_json=json.dumps(verified_moments),
             on_screen_text=intel["on_screen_text"], has_audio=int(tr.get("has_audio", False)),
-            video_json=json.dumps({"width": W, "height": H, "fps": fps, "duration_s": duration_s}))
+            video_json=json.dumps({"width": W, "height": H, "fps": fps, "duration_s": duration_s}),
+            av_offset_s=float(av.get("offset_s", 0.0)),
+            av_sync_confidence=float(av.get("confidence", 0.0)))
         save_progress(session_id, "completed",
                       f"Done — {len(verified_moments)} moments, {len(graph_events)} events, "
                       f"{len(perc['entities'])} entities, {len(frame_rows)} frames.")

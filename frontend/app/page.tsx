@@ -148,6 +148,13 @@ export default function VideoWorkspace() {
               <div className="rounded-xl border border-red-900/50 bg-slate-900 p-4">
                 <div className="text-xs uppercase tracking-wider text-red-300">Answer</div>
                 <p className="mt-1 text-sm text-slate-100">{report.answer}</p>
+                <div className="mt-2 text-xs text-slate-400">
+                  {(report.answer_confidence ?? 0).toFixed(2)} · {report.answer_verification ?? "unknown"} ·{" "}
+                  {report.answer_calibration ?? "uncalibrated"}
+                  {(report.answer_evidence ?? []).length > 0 && (
+                    <> · {report.answer_evidence!.map((s) => `${s.start.toFixed(1)}–${s.end.toFixed(1)}s`).join(", ")}</>
+                  )}
+                </div>
               </div>
             )}
             {report.summary && (

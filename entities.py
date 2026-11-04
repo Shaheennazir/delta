@@ -75,30 +75,67 @@ async def propose_concepts(keyframe_paths: list[str], focus: str = "") -> list[d
             for c in concepts if c.get("prompt")][:4]
 
 
-def _tracks_to_obs(tracks: dict, fps: float, entity_id: str) -> list[dict]:
-    obs = []
-    for oid, obj in (tracks.get("objects") or {}).items():
+def _objects_to_candidates(tracks: dict, fps: float, concept: dict, stream_i: int) -> list[dict]:
+    """One candidate per SAM object id — never per concept stream.
+
+    A stream may contain several instances; collapsing them would merge two
+    people into one identity, so object_id stays the unit here.
+    """
+    out = []
+    for j, (oid, obj) in enumerate((tracks.get("objects") or {}).items()):
         boxes = obj.get("boxes") or {}
-        n = obj.get("n_frames", 0)
-        conf = min(0.99, 0.5 + 0.5 * (n / max(1, len(boxes) or 1)) ** 0.5) if boxes else 0.0
-        for fi, b in boxes.items():
-            obs.append({"entity_id": entity_id, "t": round(fi / max(1.0, fps), 3),
-                        "frame_index": int(fi), "bbox": [float(b[0]), float(b[1]),
-                                                         float(b[2]), float(b[3])],
-                        "track_conf": round(float(conf), 3), "_oid": str(oid)})
-    return obs
+        if not boxes:
+            continue
+        n = int(obj.get("n_frames", 0))
+        coverage = n / max(1, len(boxes))
+        conf = min(0.99, 0.5 + 0.5 * coverage ** 0.5)
+        obs = [{"entity_id": "", "t": round(int(fi) / max(1.0, fps), 3),
+                "frame_index": int(fi), "bbox": [float(b[0]), float(b[1]),
+                                                 float(b[2]), float(b[3])],
+                "track_conf": round(float(conf), 3)} for fi, b in boxes.items()]
+        out.append({"candidate_id": f"c{stream_i}_{j}_{oid}",
+                    "label": concept.get("label", concept.get("prompt", "")),
+                    "kind": concept.get("kind", "object"),
+                    "confidence": round(min(0.95, 0.4 + 0.3 * coverage), 3),
+                    "observations": obs})
+    return out
+
+
+def _merge(cands: list[dict]) -> list[dict]:
+    """Merge duplicate SAM objects by shared-frame IoU; keeps instance separation."""
+    merged: list[dict] = []
+    for c in cands:
+        target = None
+        for m in merged:
+            if _same_track(m["observations"], c["observations"], iou_thr=0.65):
+                target = m
+                break
+        if target:
+            seen = {(o["frame_index"], tuple(o["bbox"])) for o in target["observations"]}
+            for o in c["observations"]:
+                if (o["frame_index"], tuple(o["bbox"])) not in seen:
+                    target["observations"].append(o)
+            target["confidence"] = max(target["confidence"], c["confidence"])
+        else:
+            merged.append({**c, "observations": list(c["observations"])})
+    for m in merged:
+        m["observations"].sort(key=lambda o: o["t"])
+    return merged
 
 
 async def track_session(file_id: str, concepts: list[dict], fps: float,
                         n_frames: int, media_wh: tuple,
-                        timeout_per_concept: float = 240.0) -> tuple[list[dict], list[dict]]:
-    """One SAM stream per concept (concurrently); merge duplicate streams via IoU. Real-only.
+                        timeout_per_concept: float = 240.0,
+                        frame_rows: list[dict] | None = None,
+                        session_id: str = "") -> tuple[list[dict], list[dict]]:
+    """One SAM stream per concept; one persistent identity per SAM object.
 
-    Each stream has its own timeout — a slow concept degrades to honest empty
-    instead of stalling the session. Concepts capped at 3 (sharpest coverage,
-    bounded latency).
+    Streams run concurrently, each budgeted. Duplicate tracks are merged only
+    when their boxes actually overlap on shared frames. Appearance descriptors
+    then bind each instance to a cross-session global_id via identity.py.
     """
     from sam_client import stream_segmentation, tracks_from_result
+    import identity
     entities: list[dict] = []
     all_obs: list[dict] = []
     if not concepts:
@@ -116,27 +153,24 @@ async def track_session(file_id: str, concepts: list[dict], fps: float,
             return i, c, None, str(e)[:200]
 
     results = await asyncio.gather(*(one(i, c) for i, c in enumerate(concepts)))
+    cands: list[dict] = []
     for i, c, tracks, _err in results:
-        if not tracks or not tracks.get("objects"):
-            continue
-        eid = f"{(c.get('kind') or 'object').lower().replace(' ', '_')}_{i + 1:03d}"
-        # De-duplicate against already-accepted entities: same-box streams merge.
-        merged_into = None
-        for e in entities:
-            mine = [o for o in all_obs if o["entity_id"] == e["entity_id"]]
-            theirs = _tracks_to_obs(tracks, fps, eid)
-            if _same_track(mine, theirs):
-                merged_into = e["entity_id"]
-                break
-        target = merged_into or eid
-        if not merged_into:
-            entities.append({"entity_id": target, "label": c.get("label", c.get("prompt", "")),
-                             "kind": c.get("kind", "object"),
-                             "confidence": round(min(0.95, 0.55 + 0.1 * len(tracks["objects"])), 3)})
-        all_obs.extend(_tracks_to_obs(tracks, fps, target))
-    for o in all_obs:
-        o.pop("_oid", None)
-    # Track confidence reflects coverage; sort deterministically.
+        if tracks and tracks.get("objects"):
+            cands.extend(_objects_to_candidates(tracks, fps, c, i))
+    cands = [c for c in _merge(cands) if c["observations"]]
+    if not cands:
+        return entities, all_obs
+
+    identity.assign(cands, frame_rows or [], media_wh, session_id)
+    for c in cands:
+        n = len(c["observations"])
+        mean_conf = sum(o["track_conf"] for o in c["observations"]) / max(1, n)
+        entities.append({
+            "entity_id": c["global_id"], "global_id": c["global_id"],
+            "label": c["label"], "kind": c["kind"],
+            "confidence": round(min(0.99, 0.5 * mean_conf + 0.5 * c["confidence"]), 3),
+        })
+        all_obs.extend(c["observations"])
     all_obs.sort(key=lambda o: (o["t"], o["entity_id"]))
     return entities, all_obs
 

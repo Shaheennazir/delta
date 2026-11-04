@@ -47,9 +47,13 @@ def init_db() -> None:
           path TEXT, motion REAL DEFAULT 0, keyframe INTEGER DEFAULT 0,
           PRIMARY KEY(session_id, frame_index));
         CREATE TABLE IF NOT EXISTS entities(
-          session_id TEXT, entity_id TEXT, label TEXT DEFAULT '',
-          kind TEXT DEFAULT 'object', confidence REAL DEFAULT 0,
+          session_id TEXT, entity_id TEXT, global_id TEXT DEFAULT '',
+          label TEXT DEFAULT '', kind TEXT DEFAULT 'object', confidence REAL DEFAULT 0,
           PRIMARY KEY(session_id, entity_id));
+        CREATE TABLE IF NOT EXISTS entity_gallery(
+          global_id TEXT PRIMARY KEY, label TEXT DEFAULT '', kind TEXT DEFAULT 'object',
+          descriptor_json TEXT DEFAULT '[]', n_obs INTEGER DEFAULT 0,
+          first_seen REAL DEFAULT 0, last_seen REAL DEFAULT 0, confidence REAL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS observations(
           session_id TEXT, entity_id TEXT, t REAL,
           frame_index INTEGER, x1 REAL, y1 REAL, x2 REAL, y2 REAL,
@@ -75,6 +79,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS qa_runs(
           session_id TEXT, qa_id TEXT, question TEXT, answer TEXT,
           evidence_json TEXT DEFAULT '[]', confidence REAL DEFAULT 0,
+          raw_confidence REAL DEFAULT 0,
           verification TEXT DEFAULT 'unknown', created_at REAL,
           PRIMARY KEY(session_id, qa_id));
         CREATE TABLE IF NOT EXISTS trace(
@@ -92,6 +97,32 @@ def init_db() -> None:
             c.execute("ALTER TABLE sessions ADD COLUMN answer TEXT DEFAULT ''")
         except Exception:
             pass
+        # Backfill: capability columns added for evidence/alignment/calibration.
+        for col, ddl in (
+            ("answer_evidence_json", "TEXT DEFAULT '[]'"),
+            ("answer_confidence", "REAL DEFAULT 0"),
+            ("answer_verification", "TEXT DEFAULT 'unknown'"),
+            ("answer_calibration", "TEXT DEFAULT 'uncalibrated'"),
+            ("av_offset_s", "REAL DEFAULT 0"),
+            ("av_sync_confidence", "REAL DEFAULT 0"),
+        ):
+            try:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
+            except Exception:
+                pass
+        try:
+            c.execute("ALTER TABLE entities ADD COLUMN global_id TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE qa_runs ADD COLUMN raw_confidence REAL DEFAULT 0")
+        except Exception:
+            pass
+        c.execute("""CREATE TABLE IF NOT EXISTS calibration_points(
+          x REAL PRIMARY KEY, y REAL NOT NULL, n INTEGER DEFAULT 1, updated_at REAL DEFAULT 0)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS outcomes(
+          session_id TEXT, item_id TEXT, raw_confidence REAL, correct INTEGER,
+          created_at REAL, PRIMARY KEY(session_id, item_id))""")
 
 
 def _now() -> float:
@@ -157,9 +188,10 @@ def get_frames(session_id: str) -> list[dict]:
 def save_entities(session_id: str, entities: list[dict], observations: list[dict]) -> None:
     init_db()
     with _lock, _connect() as c:
-        c.executemany("INSERT OR REPLACE INTO entities(session_id,entity_id,label,kind,confidence) "
-                      "VALUES(?,?,?,?,?)",
-                      [(session_id, e["entity_id"], e.get("label", ""), e.get("kind", "object"),
+        c.executemany("INSERT OR REPLACE INTO entities(session_id,entity_id,global_id,label,kind,confidence) "
+                      "VALUES(?,?,?,?,?,?)",
+                      [(session_id, e["entity_id"], e.get("global_id") or e["entity_id"],
+                        e.get("label", ""), e.get("kind", "object"),
                         e.get("confidence", 0.0)) for e in entities])
         c.execute("DELETE FROM observations WHERE session_id=?", (session_id,))
         c.executemany("INSERT INTO observations(session_id,entity_id,t,frame_index,x1,y1,x2,y2,track_conf) "
@@ -181,6 +213,88 @@ def get_entities(session_id: str) -> tuple[list[dict], list[dict]]:
             d["bbox"] = [d.get("x1", 0), d.get("y1", 0), d.get("x2", 0), d.get("y2", 0)]
             obs.append(d)
         return ents, obs
+
+
+def get_gallery(kind: str | None = None) -> list[dict]:
+    """Cross-session appearance gallery. Descriptors are unit vectors."""
+    init_db()
+    with _lock, _connect() as c:
+        if kind:
+            rows = c.execute("SELECT * FROM entity_gallery WHERE kind=?", (kind,))
+        else:
+            rows = c.execute("SELECT * FROM entity_gallery")
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["descriptor"] = json.loads(d.pop("descriptor_json") or "[]")
+            except Exception:
+                d["descriptor"] = []
+            out.append(d)
+        return out
+
+
+def upsert_gallery(global_id: str, label: str, kind: str, descriptor: list[float],
+                   confidence: float) -> dict:
+    """Running-mean appearance descriptor; count-weighted so one frame cannot dominate."""
+    init_db()
+    with _lock, _connect() as c:
+        row = c.execute("SELECT * FROM entity_gallery WHERE global_id=?", (global_id,)).fetchone()
+        now = _now()
+        if not row:
+            c.execute("INSERT INTO entity_gallery(global_id,label,kind,descriptor_json,n_obs,"
+                      "first_seen,last_seen,confidence) VALUES(?,?,?,?,?,?,?,?)",
+                      (global_id, label, kind, json.dumps(descriptor), 1, now, now, confidence))
+            return {"global_id": global_id, "label": label, "kind": kind,
+                    "descriptor": descriptor, "n_obs": 1, "confidence": confidence}
+        old = json.loads(row["descriptor_json"] or "[]")
+        n = int(row["n_obs"] or 0)
+        if old and descriptor and len(old) == len(descriptor):
+            merged = [(o * n + d) / (n + 1) for o, d in zip(old, descriptor)]
+            norm = sum(v * v for v in merged) ** 0.5 or 1.0
+            merged = [v / norm for v in merged]
+        else:
+            merged = descriptor or old
+        c.execute("UPDATE entity_gallery SET label=?, kind=?, descriptor_json=?, n_obs=?, "
+                  "last_seen=?, confidence=? WHERE global_id=?",
+                  (label or row["label"], kind or row["kind"], json.dumps(merged), n + 1,
+                   now, max(float(row["confidence"] or 0), confidence), global_id))
+        return {"global_id": global_id, "label": label or row["label"],
+                "kind": kind or row["kind"], "descriptor": merged, "n_obs": n + 1,
+                "confidence": max(float(row["confidence"] or 0), confidence)}
+
+
+def save_calibration(points: list[dict]) -> None:
+    """Replace the isotonic calibration curve: [{x, y, n}]."""
+    init_db()
+    with _lock, _connect() as c:
+        c.execute("DELETE FROM calibration_points")
+        c.executemany("INSERT OR REPLACE INTO calibration_points(x,y,n,updated_at) "
+                      "VALUES(?,?,?,?)",
+                      [(float(p["x"]), float(p["y"]), int(p.get("n", 1)), _now())
+                       for p in points])
+
+
+def get_calibration() -> list[dict]:
+    init_db()
+    with _lock, _connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT x,y,n FROM calibration_points ORDER BY x")]
+
+
+def save_outcome(session_id: str, item_id: str, raw_confidence: float, correct: bool) -> None:
+    init_db()
+    with _lock, _connect() as c:
+        c.execute("INSERT OR REPLACE INTO outcomes(session_id,item_id,raw_confidence,correct,"
+                  "created_at) VALUES(?,?,?,?,?)",
+                  (session_id, item_id, float(raw_confidence), int(bool(correct)), _now()))
+
+
+def get_outcomes() -> list[dict]:
+    init_db()
+    with _lock, _connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT session_id,item_id,raw_confidence,correct FROM outcomes ORDER BY created_at")]
 
 
 def save_events(session_id: str, events: list[dict]) -> None:
@@ -250,13 +364,14 @@ def get_audio_events(session_id: str) -> list[dict]:
 
 
 def save_qa(session_id: str, qa_id: str, question: str, answer: str,
-            evidence: list, confidence: float, verification: str) -> None:
+            evidence: list, confidence: float, verification: str,
+            raw_confidence: float = 0.0) -> None:
     init_db()
     with _lock, _connect() as c:
         c.execute("INSERT OR REPLACE INTO qa_runs(session_id,qa_id,question,answer,evidence_json,"
-                  "confidence,verification,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                  "confidence,raw_confidence,verification,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                   (session_id, qa_id, question, answer, json.dumps(evidence),
-                   confidence, verification, _now()))
+                   confidence, raw_confidence or confidence, verification, _now()))
 
 
 def get_qa(session_id: str) -> list[dict]:

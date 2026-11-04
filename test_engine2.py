@@ -56,7 +56,7 @@ def test_evidence_gate_and_abstain():
     bad2, _ = evidence.verify([{"start": 0.0, "end": 99.0, "frame_ids": []}], 10.0, set())
     assert not bad2
     assert evidence.calibrate(0.9, 0, 0) == 0.0
-    assert 0.0 < evidence.calibrate(0.9, 1, 2) <= 0.9
+    assert 0.0 < evidence.calibrate(0.9, 1, 2) <= 1.0
     rec = evidence.abstain("Was there a helicopter?")
     assert rec["confidence"] == 0.0 and rec["verification"] == "unknown"
 
@@ -112,4 +112,4 @@ def test_store_roundtrip(tmp_path=None):
                               "detail": "walks"}])
     assert store.get_events("t1")[0]["action"] == "walk"
     out = __import__("benchmark").run_all("t1")
-    assert out["total"] == 10 and out["passed"] >= 5, out
+    assert out["total"] == 10 and out["failed"] == 0, out

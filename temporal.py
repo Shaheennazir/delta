@@ -80,9 +80,9 @@ def find_containing(events: list[dict], t: float) -> list[dict]:
             if float(e.get("start_t", 0)) <= float(t) <= float(e.get("end_t", 0))]
 
 
-def contradictions(events: list[dict]) -> list[str]:
-    """Deterministic checks: end<=start, out-of-range, duplicate ids, overlap of
-    mutually-exclusive state transitions on the same entity (same key, different value)."""
+def contradictions(events: list[dict], duration: float = 0.0) -> list[str]:
+    """Deterministic checks: malformed spans, duplicate ids, out-of-range, and
+    mutually-exclusive state values asserted by overlapping events on one entity."""
     problems: list[str] = []
     seen: set[str] = set()
     for e in events:
@@ -93,6 +93,24 @@ def contradictions(events: list[dict]) -> list[str]:
         s, en = float(e.get("start_t", 0)), float(e.get("end_t", 0))
         if en <= s:
             problems.append(f"{eid}: end_t ({en}) <= start_t ({s})")
+        if duration > 0 and (s < -1e-6 or en > duration + 1e-6):
+            problems.append(f"{eid}: span [{s},{en}] outside [0,{duration}]")
+    # Same entity + same state key + same time + different value = contradiction.
+    claims: list[dict] = []
+    for e in events:
+        s, en = float(e.get("start_t", 0)), float(e.get("end_t", 0))
+        for eid in e.get("entity_ids") or []:
+            for key, value in (e.get("state_after") or {}).items():
+                claims.append({"event_id": str(e.get("event_id", "")), "entity_id": eid,
+                               "key": key, "value": value, "start": s, "end": en})
+    for i, a in enumerate(claims):
+        for b in claims[i + 1:]:
+            if (a["entity_id"] == b["entity_id"] and a["key"] == b["key"]
+                    and a["value"] != b["value"]
+                    and min(a["end"], b["end"]) > max(a["start"], b["start"]) + 1e-6):
+                problems.append(
+                    f"{a['entity_id']}: {a['key']} is both {a['value']!r} "
+                    f"({a['event_id']}) and {b['value']!r} ({b['event_id']})")
     return problems
 
 

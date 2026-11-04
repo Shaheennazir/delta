@@ -49,6 +49,10 @@ class SessionReport(BaseModel):
     status: str = "completed"
     title: str = ""
     answer: str = ""
+    answer_evidence: list["EvidenceSpan"] = []
+    answer_confidence: float = 0.0
+    answer_verification: str = "unknown"
+    answer_calibration: str = "uncalibrated"
     summary: str = ""
     themes: list[str] = []
     transcript: str = ""
@@ -61,6 +65,8 @@ class SessionReport(BaseModel):
     n_entities: int = 0
     n_events: int = 0
     ablation_level: int = 1
+    av_offset_s: float = 0.0
+    av_sync_confidence: float = 0.0
 
 
 # ---- engine contracts ----
@@ -70,11 +76,26 @@ class EvidenceSpan(BaseModel):
     start: float
     end: float
     frame_ids: list[int] = []
+    source_id: str = ""
+    kind: str = ""
+    verification: str = "inferred"
+
+
+class AnswerClaim(BaseModel):
+    model_config = {"extra": "forbid"}
+    claim_id: str
+    text: str
+    start_t: float
+    end_t: float
+    confidence: float = 0.0
+    verification: str = "inferred"
 
 
 class GraphEvent(BaseModel):
     model_config = {"extra": "forbid"}
     event_id: str
+    candidate_id: str = ""
+    source: str = ""
     action: str = ""
     entity_ids: list[str] = []
     start_t: float
@@ -116,3 +137,12 @@ class QAResponse(BaseModel):
     evidence: list[EvidenceSpan] = []
     confidence: float = 0.0
     verification: str = "unknown"
+    abstained: bool = False
+
+
+class QAOutcome(BaseModel):
+    model_config = {"extra": "forbid"}
+    correct: bool
+
+
+SessionReport.model_rebuild()
