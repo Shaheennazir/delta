@@ -8,20 +8,42 @@ export function EventList({ events, onSeek }: { events: GraphEvent[]; onSeek: (t
   if (!events.length) return <div className="rounded-lg bg-slate-900 p-3 text-sm text-slate-400">No events — proposal found nothing grounded, or tracking was empty.</div>;
   return (
     <div className="space-y-2">
-      {events.map((e) => (
-        <button key={e.event_id} onClick={() => onSeek(e.start_t)}
-          className="w-full rounded-lg bg-slate-900 p-3 text-left text-sm hover:bg-slate-800">
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-xs text-emerald-300">{e.event_id}</span>
-            <span className="text-xs text-slate-400">[{e.start_t.toFixed(1)}–{e.end_t.toFixed(1)}s] · {(e.confidence * 100).toFixed(0)}%</span>
+      {events.map((e) => {
+        const spans = e.evidence ?? [];
+        const fids = spans.flatMap((s) => s.frame_ids ?? []).slice(0, 4);
+        return (
+          <div key={e.event_id} onClick={() => onSeek(e.start_t)} role="button" tabIndex={0}
+            onKeyDown={(ev) => { if (ev.key === "Enter") onSeek(e.start_t); }}
+            className="w-full cursor-pointer rounded-lg bg-slate-900 p-3 text-left text-sm hover:bg-slate-800">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs text-emerald-300">{e.event_id}</span>
+              <span className="text-xs text-slate-400">[{e.start_t.toFixed(1)}–{e.end_t.toFixed(1)}s] · {(e.confidence * 100).toFixed(0)}%</span>
+            </div>
+            <div className="mt-1 font-medium text-slate-100">{e.action}</div>
+            <div className="mt-0.5 text-xs text-slate-400">{e.detail}</div>
+            {e.entity_ids.length > 0 && (
+              <div className="mt-1 text-[11px] text-slate-500">entities: {e.entity_ids.join(", ")}</div>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+              {e.source && (
+                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-slate-400">{e.source}</span>
+              )}
+              {fids.length > 0 ? (
+                <span className="text-slate-500">
+                  frames {fids.join(", ")}{" "}
+                  <button
+                    onClick={(ev) => { ev.stopPropagation(); onSeek(e.start_t); }}
+                    className="text-sky-300 hover:underline">
+                    seek
+                  </button>
+                </span>
+              ) : (
+                <span className="text-slate-600">no retrievable frames</span>
+              )}
+            </div>
           </div>
-          <div className="mt-1 font-medium text-slate-100">{e.action}</div>
-          <div className="mt-0.5 text-xs text-slate-400">{e.detail}</div>
-          {e.entity_ids.length > 0 && (
-            <div className="mt-1 text-[11px] text-slate-500">entities: {e.entity_ids.join(", ")}</div>
-          )}
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -100,10 +122,16 @@ export function QaPanel({ sessionId, onSeek }: { sessionId: string; onSeek: (t: 
       {err && <div className="mt-2 text-red-300">{err}</div>}
       {rec && (
         <div className="mt-3 space-y-2">
+          {rec.abstained && (
+            <div className="rounded-lg bg-amber-950 p-2 text-xs text-amber-200">
+              Abstained — insufficient verified evidence.
+            </div>
+          )}
           <p className="text-slate-100">{rec.answer}</p>
           <div className="text-xs text-slate-400">
             verification: <span className={rec.verification === "supported" ? "text-emerald-300" : "text-amber-300"}>{rec.verification}</span>
             {" · "}confidence {(rec.confidence * 100).toFixed(0)}%
+            {rec.calibration && ` · ${rec.calibration}`}
           </div>
           {rec.evidence.map((s, i) => (
             <button key={i} onClick={() => onSeek(s.start)} className="block text-xs text-sky-300 hover:underline">
@@ -137,7 +165,7 @@ export function BenchmarkPanel({ sessionId }: { sessionId: string }) {
       <div className="flex items-center justify-between">
         <div className="text-xs uppercase tracking-wider text-slate-400">Adversarial evaluation</div>
         <button onClick={run} disabled={busy} className="rounded-lg bg-slate-700 px-3 py-1 text-xs text-white disabled:opacity-50">
-          {busy ? "…" : score ? "Re-run" : "Run 10 tests"}
+          {busy ? "…" : score ? "Re-run" : "Run 11 tests"}
         </button>
       </div>
       {score && <div className="mt-1 text-xs text-slate-300">{score}</div>}

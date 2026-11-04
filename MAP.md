@@ -1,5 +1,8 @@
 # MAP.md — delta (Video Intelligence, real-only)
 
+- `frontend/components/EnginePanels.tsx` → `EventList` (event cards with source badge + stored evidence frame ids + seek; empty-frame state reads "no retrievable frames"), `QaPanel` (investigator input + abstained banner + verification/confidence/calibration + clickable evidence spans), `BenchmarkPanel` (runs 11 adversarial tests), `TracePanel`, `EntityList`.
+- `frontend/app/page.tsx` → VideoWorkspace: answer evidence spans are clickable seek buttons (start + first frame ids); event graph + moments share `seekTo`; progress checklist + trace + transcript/themes/moments.
+
 - `schemas.py` → Pydantic v2 contracts: VideoSessionInput, SessionReport (answer + answer_evidence/answer_confidence/answer_verification/answer_calibration + av_offset_s/av_sync_confidence), EvidenceSpan (source_id/kind/verification), AnswerClaim, GraphEvent (candidate_id/source), QAOutcome/QAResponse(abstained).
 - `identity.py` → instance-level appearance descriptors (4x4 spatial colour + saturation-weighted hue + gradient orientation, unit-norm) from stored frame crops; cosine match within kind to persistent `global_id` via `entity_gallery`; running-mean descriptor update. CONSTRAINED stitching: `resume_plausible` (drift ≤2+dt diags, size 0.33–3) + `stitch_tracklets` with explicit rejections (temporal overlap/shared frame, impossible displacement, appearance <thr, simultaneous-track conflict, scene-cut without IoU>0.1+appearance ≥0.90, gap>5s or gap>2.5s without appearance ≥0.85); stage-1 same-gid merges ONLY when `_can_merge` passes else forks unknown id; `assign` resolves simultaneous same-gid conflicts (strongest keeps id) and forwards scene-cut times from frame_rows.
 - `events.py` → deterministic candidates from signals (entity presence/motion runs with direction, speech turns, OCR rows, audio events) with typed state_before/after; Spark labels by candidate_id only; `state_timeline` merges contiguous same-value intervals. PLUS `build_interactions(entities, observations, frame_rows=None)` (grounded: same-frame co-presence, contact requires IoU>0.02 — proximity alone is near with dist<1.2; runs linked ≤1s, ≥2 co-present frames required) with explicit SAM->stored mapping `_map_sam_to_stored` (exact index match only, no nearest-neighbour fallback; runs with <2 mapped frames rejected); emits `interaction`-source candidates with entity_ids=[a,b], `evidence_frames`=stored ids + `sam_evidence_frames`=raw SAM fis; wired into `build_candidates(..., frame_rows)` + preserved through `extract_events`.
@@ -34,6 +37,18 @@
 - Legacy (unit-test only, not in live path): `calibration.py`, `extractor.py`, `primitives.py`, `cli.py`, `test_engine.py`. Deleted: `planner.py`, `reviewer.py` (football + mocks).
 
 ## Change Log
+
+### [2026-11-05] — Investigation workspace evidence polish (frontend)
+
+**What changed:**
+- `frontend/components/EnginePanels.tsx`: `EventList` outer button → div+role/button (valid nested evidence buttons), added source badge + stored frame ids + seek / "no retrievable frames" empty state; `QaPanel` added abstained banner + calibration suffix; `BenchmarkPanel` label fixed 10 → 11 tests.
+- `frontend/app/page.tsx`: answer evidence text → clickable seek buttons with span start/end + first frame ids.
+
+**Why:**
+- Interaction evidence is now stored-frame-resolved or explicitly unmapped; the workspace must show retrievability instead of hiding it, and every evidence citation must seek.
+
+**Impact:**
+- No API change; existing `GraphEvent.evidence` / `answer_evidence` shapes reused. `npm run build` clean; 16 offline tests pass.
 
 ### [2026-11-05] — Safe retry for failed SAM streams (entities)
 

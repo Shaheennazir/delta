@@ -152,7 +152,15 @@ export default function VideoWorkspace() {
                   {(report.answer_confidence ?? 0).toFixed(2)} · {report.answer_verification ?? "unknown"} ·{" "}
                   {report.answer_calibration ?? "uncalibrated"}
                   {(report.answer_evidence ?? []).length > 0 && (
-                    <> · {report.answer_evidence!.map((s) => `${s.start.toFixed(1)}–${s.end.toFixed(1)}s`).join(", ")}</>
+                    <span> ·{" "}
+                      {report.answer_evidence!.map((s, i) => (
+                        <button key={i} onClick={() => seekTo(s.start)}
+                          className="text-sky-300 hover:underline">
+                          {s.start.toFixed(1)}–{s.end.toFixed(1)}s{s.frame_ids.length ? ` (${s.frame_ids.slice(0, 4).join(", ")})` : ""}
+                          {i < report.answer_evidence!.length - 1 ? ", " : ""}
+                        </button>
+                      ))}
+                    </span>
                   )}
                 </div>
               </div>
