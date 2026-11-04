@@ -38,6 +38,22 @@
 
 ## Change Log
 
+### [2026-11-05] — v0.3 live regression: track split + evidence mapping + retry
+
+**What changed:**
+- `benchmark/results_v03/`: 15 fresh sessions (latest code: split + mapping + safe retry; same 15 clips/focus/models as v0.2); v0.2 frozen in `results_v02/`, v0.1 in `results_v01/`.
+
+**Why:**
+- Offline correctness was verified per change; live impact was explicitly outstanding. Same-conditions rerun isolates the pipeline effect (model-run stochasticity + SAM variance remain as noise confounds).
+
+**Impact:**
+- Occlusion 1/7/7 → 7/0/8: implausible resumes 14 → 0 across all clips; 235ff86d37 gaps 8 → 3, collisions 2 → 0. Tracklet splitting fixed the SAM-native jumps live, not just offline.
+- Evidence resolution: unsupported_event_rate 0.0 on every checkable clip (235ff86d37 0.1875(15) → 0.0(0); 24b7b95ca4 0.1(4) → 0.0; 5d262b025c, 6fb7a04167, bda2f20019, fb8caa28e4 all → 0.0). The 15/80 flock failures are gone.
+- Entity counts rose on split clips (0ddb 1 → 8, 235ff 9 → 14, 5d26 3 → 11, 6fb 4 → 22, b41 2 → 8, bda 2 → 5, fb8 2 → 7); fell on SAM-variance clips (24b 8 → 1, 6da 2 → 0). Zero-entity transport clips unchanged (18b160d3a7, d33c8343bc, c4638cc87e, 0d0ebe00cc).
+- Interaction 6/1/8 → 3/2/10 with 0 hallucinated in every evaluated clip (precision held). Recall regressed on volume: 235ff 5 → 6 missed, 6fb 0 → 12 missed over 23 multi-events; evaluated set churned with SAM variance (24b/6da/fb8 pass → skip, 5d2c skip → pass). Fragmentation buys occlusion/evidence wins at interaction-recall cost — next research question, not a silent win.
+- SAM retry: 10 final (attempt 2/2) failures in the v0.3 log, 0 retry conversions. Retry is honest (bounded, fail-fast on permanent, empty on final failure) but persistent 3/3 transport aborts are not rescued by one retry. Transport reliability stays outstanding.
+- Answers: completed 15/15; answer_verification supported 14 → 12 (unknown 1 → 3: 0ddb35f585, 1088228079, 6da16715cd). No outcomes recorded, so calibration stays "uncalibrated" and the abstention gate is unchanged — not claimed as calibrated.
+
 ### [2026-11-05] — Investigation workspace evidence polish (frontend)
 
 **What changed:**

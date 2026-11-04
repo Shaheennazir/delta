@@ -1,0 +1,187 @@
+{
+  "video_id": "18b160d3a7",
+  "status": "completed",
+  "answer": "Yes, the woman in black sits at the desk next to the woman in the dark striped short-sleeve shirt, and they chat, smile and laugh together while looking toward the camera.",
+  "answer_verification": "supported",
+  "n_frames_indexed": 170,
+  "n_entities": 0,
+  "n_events": 0,
+  "ablation_level": 2,
+  "benchmark": {
+    "session_id": "ses_ba5125f3",
+    "tests": [
+      {
+        "test": "frame_shuffle",
+        "result": "skip",
+        "detail": "need >=2 events"
+      },
+      {
+        "test": "frame_deletion",
+        "result": "pass",
+        "detail": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "result": "pass",
+        "detail": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "result": "skip",
+        "detail": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "result": "skip",
+        "detail": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "result": "skip",
+        "detail": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "result": "skip",
+        "detail": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "result": "skip",
+        "detail": "no events"
+      },
+      {
+        "test": "interaction",
+        "result": "skip",
+        "detail": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "result": "pass",
+        "detail": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "result": "pass",
+        "detail": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "passed": 4,
+    "skipped": 7,
+    "failed": 0,
+    "total": 11,
+    "applicable": 4,
+    "evaluated": 4,
+    "coverage": [
+      {
+        "test": "frame_shuffle",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 events"
+      },
+      {
+        "test": "frame_deletion",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "unknown frame rejected: frame -999999 not in frame store"
+      },
+      {
+        "test": "audio_removal",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "no-audio session: transcript_empty=True, audio_events=0"
+      },
+      {
+        "test": "audio_video_desync",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need audio events, frames, duration"
+      },
+      {
+        "test": "similar_objects",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities"
+      },
+      {
+        "test": "occlusion",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no track gap >1.5s"
+      },
+      {
+        "test": "rapid_text",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no OCR rows"
+      },
+      {
+        "test": "temporal_reversal",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "no events"
+      },
+      {
+        "test": "interaction",
+        "applicable": false,
+        "evaluated": false,
+        "result": "skip",
+        "reason": "need >=2 identities with events"
+      },
+      {
+        "test": "counterfactual",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "empty evidence rejected: no evidence spans"
+      },
+      {
+        "test": "impossible_question",
+        "applicable": true,
+        "evaluated": true,
+        "result": "pass",
+        "reason": "abstains on unknown grounding even with 0.99 model confidence"
+      }
+    ],
+    "metrics": {
+      "track_gaps_gt_1_5s": 0,
+      "implausible_resumes": 0,
+      "appearance_switches": 0,
+      "identity_precision_proxy": null,
+      "identity_recall": null,
+      "identity_recall_note": "needs ground-truth continuations; unbridged gap count reported instead",
+      "events_checkable": 0,
+      "events_unsupported": 0,
+      "unsupported_event_rate": null
+    },
+    "ablation": {
+      "level": 2,
+      "labels": {
+        "1": "video LLM alone",
+        "2": "LLM + adaptive frame selection",
+        "3": "LLM + tracking/event graph/temporal index",
+        "4": "full agentic + evidence retrieval/verification"
+      },
+      "components": {
+        "frames": 170,
+        "entities": 0,
+        "events": 0,
+        "qa_runs": 0
+      }
+    }
+  },
+  "focus": "The woman is sitting at the desk, chatting and laughing with the woman in a black short-sleeve shirt with white stripes, while looking at the camera.",
+  "gt": {
+    "annotated_frames_with_masks": 235,
+    "masks_total": 543,
+    "mean_mask_fill_20": 0.1404
+  }
+}
